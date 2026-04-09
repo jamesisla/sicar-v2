@@ -1,0 +1,11 @@
+# Owners for all files — adjust to your GitHub usernames
+* @your-username
+
+# Backend
+/backend/ @your-username
+
+# Frontend
+/frontend/ @your-username
+
+# CI/CD — requires explicit review
+/.github/ @your-username

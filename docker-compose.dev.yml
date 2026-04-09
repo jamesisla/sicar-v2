@@ -1,0 +1,42 @@
+version: '3.8'
+
+# Development override — mounts source code for hot reload
+services:
+  backend:
+    build:
+      context: ./backend
+      target: builder
+    command: npm run start:dev
+    volumes:
+      - ./backend/src:/app/src
+    environment:
+      - NODE_ENV=development
+    env_file:
+      - ./backend/.env
+
+  frontend:
+    build:
+      context: ./frontend
+      target: deps
+    command: npm run dev
+    volumes:
+      - ./frontend/app:/app/app
+      - ./frontend/components:/app/components
+      - ./frontend/lib:/app/lib
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:3001
+
+  oracle:
+    image: gvenzl/oracle-xe:21-slim
+    ports:
+      - "1521:1521"
+    environment:
+      - ORACLE_PASSWORD=oracle
+      - APP_USER=mbnowner
+      - APP_USER_PASSWORD=mbnowner123
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+      - ./backend/db/migrations:/docker-entrypoint-initdb.d
+
+volumes:
+  oracle_data:

@@ -1,0 +1,57 @@
+import { Injectable } from '@nestjs/common';
+import { OracleService } from '../common/oracle/oracle.service';
+
+@Injectable()
+export class ReportesService {
+  constructor(private oracle: OracleService) {}
+
+  async getReporte(tipo: string, filters: any, user: any) {
+    const regionFilter = user.region !== 90 ? 'AND P.PRREGION = :region' : '';
+    const binds: any = user.region !== 90 ? { region: user.region } : {};
+
+    const queries: any = {
+      'cartera-morosa': `
+        SELECT P.IDPRODUCTO, CA.CANUMEROEXPEDIENTE, C.CLNOMBRE, C.CLRUT,
+               P.PRREGION, EP.EPNOMBRE AS ESTADO,
+               SUM(CU.CUMONTO) AS TOTAL_DEUDA, COUNT(CU.IDCUOTAS) AS NUM_CUOTAS
+        FROM PRODUCTO P
+        JOIN CONTRATOARRIENDO CA ON CA.PRODUCTO_IDPRODUCTO = P.IDPRODUCTO
+        JOIN CLIENTE C ON C.IDCLIENTE = P.CLIENTE_IDCLIENTE
+        JOIN ESTADOPRODUCTO EP ON EP.IDESTADOPRODUCTO = P.ESTADOPRODUCTO_IDESTADOP
+        JOIN CUOTA CU ON CU.PRODUCTO_IDPRODUCTO = P.IDPRODUCTO AND CU.ESTADOCUOTA_IDESTADOCUOTA = 3
+        WHERE P.ESTADOPRODUCTO_IDESTADOP = 5 ${regionFilter}
+        GROUP BY P.IDPRODUCTO, CA.CANUMEROEXPEDIENTE, C.CLNOMBRE, C.CLRUT, P.PRREGION, EP.EPNOMBRE
+        ORDER BY TOTAL_DEUDA DESC`,
+      'convenios': `
+        SELECT P.IDPRODUCTO, CA.CANUMEROEXPEDIENTE, C.CLNOMBRE,
+               COUNT(CU.IDCUOTAS) AS CUOTAS_CONVENIO,
+               SUM(CU.CUMONTO + CU.CUCARGOCONVENIO) AS MONTO_CONVENIO
+        FROM PRODUCTO P
+        JOIN CONTRATOARRIENDO CA ON CA.PRODUCTO_IDPRODUCTO = P.IDPRODUCTO
+        JOIN CLIENTE C ON C.IDCLIENTE = P.CLIENTE_IDCLIENTE
+        JOIN CUOTA CU ON CU.PRODUCTO_IDPRODUCTO = P.IDPRODUCTO AND CU.ESTADOCUOTA_IDESTADOCUOTA = 4
+        WHERE 1=1 ${regionFilter}
+        GROUP BY P.IDPRODUCTO, CA.CANUMEROEXPEDIENTE, C.CLNOMBRE`,
+      'abonos': `
+        SELECT CC.IDCUENTACORRIENTE, CC.CCFCHMOVIMIENTO, CC.CCMONTOMOV,
+               TM.TMNOMBRE AS TIPO_MOVIMIENTO, CA.CANUMEROEXPEDIENTE
+        FROM CUENTACORRIENTE CC
+        JOIN TIPOMOVIMIENTO TM ON TM.IDTIPOMOVIMIENTO = CC.TIPOMOVIMIENTO_IDTIPOMOV
+        JOIN CONTRATOARRIENDO CA ON CA.PRODUCTO_IDPRODUCTO = CC.PRODUCTO_IDPRODUCTO
+        JOIN PRODUCTO P ON P.IDPRODUCTO = CC.PRODUCTO_IDPRODUCTO
+        WHERE CC.CCFCHMOVIMIENTO >= NVL(TO_DATE(:fechaDesde, 'DD/MM/YYYY'), SYSDATE - 30) ${regionFilter}
+        ORDER BY CC.CCFCHMOVIMIENTO DESC`,
+      'contabilizaciones': `
+        SELECT DA.IDDETALLEASIENTO, DA.DACODCUENTASIGFE, DA.DAMONTO,
+               DA.DACARGOABONO, DA.ASIENTOSIGFE_ANIOASIENTO
+        FROM DETALLEASIENTO DA
+        ORDER BY DA.ASIENTOSIGFE_ANIOASIENTO DESC, DA.IDDETALLEASIENTO DESC
+        FETCH FIRST 500 ROWS ONLY`,
+    };
+
+    if (filters.fechaDesde) binds.fechaDesde = filters.fechaDesde;
+
+    const sql = queries[tipo] || queries['cartera-morosa'];
+    return this.oracle.executeQuery(sql, binds);
+  }
+}
