@@ -25,7 +25,7 @@
     "class-validator": "^0.14.0",
     "nest-winston": "^1.9.0",
     "oracledb": "^6.0.0",
-    "passport": "^0.6.0",
+    "passport": "^0.7.0",
     "passport-jwt": "^4.0.0",
     "pg": "^8.11.0",
     "reflect-metadata": "^0.1.13",
