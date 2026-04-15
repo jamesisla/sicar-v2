@@ -1,57 +1,59 @@
 import { Injectable } from '@nestjs/common';
-import { OracleService } from '../common/oracle/oracle.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Producto } from '../common/database/entities/producto.entity';
+import { Cuota } from '../common/database/entities/cuota.entity';
+import { CuentaCorriente } from '../common/database/entities/cuenta-corriente.entity';
+import { ContratoArriendo } from '../common/database/entities/contrato-arriendo.entity';
 
 @Injectable()
 export class ReportesService {
-  constructor(private oracle: OracleService) {}
+  constructor(
+    @InjectRepository(Producto) private productoRepo: Repository<Producto>,
+    @InjectRepository(Cuota) private cuotaRepo: Repository<Cuota>,
+    @InjectRepository(CuentaCorriente) private ccRepo: Repository<CuentaCorriente>,
+    @InjectRepository(ContratoArriendo) private contratoRepo: Repository<ContratoArriendo>,
+  ) {}
 
   async getReporte(tipo: string, filters: any, user: any) {
-    const regionFilter = user.region !== 90 ? 'AND P.PRREGION = :region' : '';
-    const binds: any = user.region !== 90 ? { region: user.region } : {};
+    const regionFilter = user.region !== 90;
+    const region = user.region;
 
-    const queries: any = {
-      'cartera-morosa': `
-        SELECT P.IDPRODUCTO, CA.CANUMEROEXPEDIENTE, C.CLNOMBRE, C.CLRUT,
-               P.PRREGION, EP.EPNOMBRE AS ESTADO,
-               SUM(CU.CUMONTO) AS TOTAL_DEUDA, COUNT(CU.IDCUOTAS) AS NUM_CUOTAS
-        FROM PRODUCTO P
-        JOIN CONTRATOARRIENDO CA ON CA.PRODUCTO_IDPRODUCTO = P.IDPRODUCTO
-        JOIN CLIENTE C ON C.IDCLIENTE = P.CLIENTE_IDCLIENTE
-        JOIN ESTADOPRODUCTO EP ON EP.IDESTADOPRODUCTO = P.ESTADOPRODUCTO_IDESTADOP
-        JOIN CUOTA CU ON CU.PRODUCTO_IDPRODUCTO = P.IDPRODUCTO AND CU.ESTADOCUOTA_IDESTADOCUOTA = 3
-        WHERE P.ESTADOPRODUCTO_IDESTADOP = 5 ${regionFilter}
-        GROUP BY P.IDPRODUCTO, CA.CANUMEROEXPEDIENTE, C.CLNOMBRE, C.CLRUT, P.PRREGION, EP.EPNOMBRE
-        ORDER BY TOTAL_DEUDA DESC`,
-      'convenios': `
-        SELECT P.IDPRODUCTO, CA.CANUMEROEXPEDIENTE, C.CLNOMBRE,
-               COUNT(CU.IDCUOTAS) AS CUOTAS_CONVENIO,
-               SUM(CU.CUMONTO + CU.CUCARGOCONVENIO) AS MONTO_CONVENIO
-        FROM PRODUCTO P
-        JOIN CONTRATOARRIENDO CA ON CA.PRODUCTO_IDPRODUCTO = P.IDPRODUCTO
-        JOIN CLIENTE C ON C.IDCLIENTE = P.CLIENTE_IDCLIENTE
-        JOIN CUOTA CU ON CU.PRODUCTO_IDPRODUCTO = P.IDPRODUCTO AND CU.ESTADOCUOTA_IDESTADOCUOTA = 4
-        WHERE 1=1 ${regionFilter}
-        GROUP BY P.IDPRODUCTO, CA.CANUMEROEXPEDIENTE, C.CLNOMBRE`,
-      'abonos': `
-        SELECT CC.IDCUENTACORRIENTE, CC.CCFCHMOVIMIENTO, CC.CCMONTOMOV,
-               TM.TMNOMBRE AS TIPO_MOVIMIENTO, CA.CANUMEROEXPEDIENTE
-        FROM CUENTACORRIENTE CC
-        JOIN TIPOMOVIMIENTO TM ON TM.IDTIPOMOVIMIENTO = CC.TIPOMOVIMIENTO_IDTIPOMOV
-        JOIN CONTRATOARRIENDO CA ON CA.PRODUCTO_IDPRODUCTO = CC.PRODUCTO_IDPRODUCTO
-        JOIN PRODUCTO P ON P.IDPRODUCTO = CC.PRODUCTO_IDPRODUCTO
-        WHERE CC.CCFCHMOVIMIENTO >= NVL(TO_DATE(:fechaDesde, 'DD/MM/YYYY'), SYSDATE - 30) ${regionFilter}
-        ORDER BY CC.CCFCHMOVIMIENTO DESC`,
-      'contabilizaciones': `
-        SELECT DA.IDDETALLEASIENTO, DA.DACODCUENTASIGFE, DA.DAMONTO,
-               DA.DACARGOABONO, DA.ASIENTOSIGFE_ANIOASIENTO
-        FROM DETALLEASIENTO DA
-        ORDER BY DA.ASIENTOSIGFE_ANIOASIENTO DESC, DA.IDDETALLEASIENTO DESC
-        FETCH FIRST 500 ROWS ONLY`,
-    };
+    switch (tipo) {
+      case 'cartera-morosa':
+        return this.productoRepo.createQueryBuilder('p')
+          .innerJoin(ContratoArriendo, 'ca', 'ca.productoId = p.id')
+          .innerJoinAndSelect('p.cliente', 'c')
+          .innerJoinAndSelect('p.estadoProducto', 'ep')
+          .where('p.estadoProductoId = 5')
+          .andWhere(regionFilter ? 'p.regionId = :region' : '1=1', { region })
+          .orderBy('p.montoTotal', 'DESC')
+          .getMany();
 
-    if (filters.fechaDesde) binds.fechaDesde = filters.fechaDesde;
+      case 'convenios':
+        return this.cuotaRepo.createQueryBuilder('cu')
+          .innerJoinAndSelect('cu.producto', 'p')
+          .innerJoinAndSelect('p.cliente', 'c')
+          .where('cu.estadoCuotaId = 4')
+          .andWhere(regionFilter ? 'p.regionId = :region' : '1=1', { region })
+          .getMany();
 
-    const sql = queries[tipo] || queries['cartera-morosa'];
-    return this.oracle.executeQuery(sql, binds);
+      case 'abonos':
+        const qb = this.ccRepo.createQueryBuilder('cc')
+          .innerJoin('cc.producto', 'p')
+          .leftJoinAndSelect('cc.tipoMovimiento', 'tm')
+          .where('cc.cargoAbono = 2')
+          .andWhere(regionFilter ? 'p.regionId = :region' : '1=1', { region })
+          .orderBy('cc.fchMovimiento', 'DESC')
+          .take(500);
+        if (filters.fechaDesde) {
+          const [d, m, y] = filters.fechaDesde.split('/').map(Number);
+          qb.andWhere('cc.fchMovimiento >= :desde', { desde: new Date(y, m - 1, d) });
+        }
+        return qb.getMany();
+
+      default:
+        return [];
+    }
   }
 }

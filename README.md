@@ -7,10 +7,13 @@ Sistema de Administración de Cartera de Arriendos — Ministerio de Bienes Naci
 | Capa | Tecnología |
 |------|-----------|
 | Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS |
-| Backend | NestJS, TypeScript, node-oracledb |
-| Base de datos | Oracle (existente, sin migración) |
+| Backend | NestJS, TypeScript, TypeORM |
+| Base de datos | PostgreSQL (desarrollo) / Oracle (producción) |
+| ORM | TypeORM — soporta PostgreSQL, Oracle, MySQL, SQLite |
 | Contenedores | Docker + Docker Compose |
 | CI/CD | GitHub Actions |
+
+> El backend usa TypeORM como capa de abstracción. Cambiar de PostgreSQL a Oracle solo requiere ajustar las variables de entorno `DB_TYPE`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`.
 
 ---
 
@@ -34,12 +37,21 @@ cp backend/.env.example backend/.env
 ### 2. Desarrollo local (con hot reload)
 
 ```bash
+# Levanta PostgreSQL + backend + frontend con hot reload
 docker compose -f docker-compose.dev.yml up
+
+# La BD se inicializa automáticamente con schema.sql + seed.sql
+# Backend: http://localhost:3001
+# Frontend: http://localhost:3000
+# API Docs: http://localhost:3001/api/docs
 ```
 
 O sin Docker:
 
 ```bash
+# Primero levanta solo PostgreSQL
+docker compose -f docker-compose.dev.yml up postgres
+
 # Backend
 cd backend && npm install && npm run start:dev
 
@@ -135,7 +147,24 @@ Ve a **Settings → Environments** y crea:
 
 ---
 
-## Tests
+## Cambiar de base de datos
+
+El backend usa TypeORM. Para conectar a Oracle en producción, solo cambia el `.env`:
+
+```bash
+DB_TYPE=oracle
+DB_HOST=oracle-host
+DB_PORT=1521
+DB_NAME=SICAR
+DB_USER=mbnowner
+DB_PASSWORD=tu-password
+```
+
+No se requiere cambiar código. TypeORM traduce las queries automáticamente.
+
+---
+
+## Base de datos PostgreSQL (desarrollo)
 
 ```bash
 # Backend — todos los tests (unitarios + PBT)
@@ -172,3 +201,33 @@ SIGFE_CORREO_NOTIFICACION=...
 ```
 
 **Nunca commitear `.env` con valores reales.**
+
+---
+
+## Cambiar de base de datos
+
+El backend usa TypeORM. Para conectar a Oracle en producción, solo cambia el `.env`:
+
+```bash
+DB_TYPE=oracle
+DB_HOST=oracle-host
+DB_PORT=1521
+DB_NAME=SICAR
+DB_USER=mbnowner
+DB_PASSWORD=tu-password
+```
+
+No se requiere cambiar código. TypeORM traduce las queries automáticamente.
+
+---
+
+## Base de datos PostgreSQL (desarrollo)
+
+El schema se crea automáticamente al levantar Docker. Para aplicarlo manualmente:
+
+```bash
+psql -U sicar -d sicar_v2 -f backend/db/schema.sql
+psql -U sicar -d sicar_v2 -f backend/db/seed.sql
+```
+
+Usuario de prueba: `admin` / `admin123`

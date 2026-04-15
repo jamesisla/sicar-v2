@@ -1,12 +1,27 @@
 import { Injectable, UnprocessableEntityException, ConflictException } from '@nestjs/common';
-import { OracleService } from '../common/oracle/oracle.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { validarRut } from '../common/validators/rut.validator';
+import { CuponPago } from '../common/database/entities/cupon-pago.entity';
+import { CuotaCuponPago } from '../common/database/entities/cuota-cupon-pago.entity';
+import { Cuota } from '../common/database/entities/cuota.entity';
+import { PagoTgr } from '../common/database/entities/pago-tgr.entity';
+import { CargaBanco } from '../common/database/entities/carga-banco.entity';
+import { CuentaCorriente } from '../common/database/entities/cuenta-corriente.entity';
 import { RegistrarAbonoDto, GenerarCuponDto, NotificacionTgrDto, CargaBancoDto } from './dto/pagos.dto';
 
 @Injectable()
 export class PagosService {
-  constructor(private oracle: OracleService, private config: ConfigService) {}
+  constructor(
+    @InjectRepository(CuponPago) private cuponRepo: Repository<CuponPago>,
+    @InjectRepository(CuotaCuponPago) private cuotaCuponRepo: Repository<CuotaCuponPago>,
+    @InjectRepository(Cuota) private cuotaRepo: Repository<Cuota>,
+    @InjectRepository(PagoTgr) private pagoTgrRepo: Repository<PagoTgr>,
+    @InjectRepository(CargaBanco) private cargaBancoRepo: Repository<CargaBanco>,
+    @InjectRepository(CuentaCorriente) private ccRepo: Repository<CuentaCorriente>,
+    private config: ConfigService,
+  ) {}
 
   async registrarAbono(dto: RegistrarAbonoDto) {
     if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dto.fechaContable)) {
@@ -16,175 +31,118 @@ export class PagosService {
       throw new UnprocessableEntityException('El dígito verificador del RUT del usuario es incorrecto');
     }
 
-    // Select SP based on tipoMovimiento (Property 9: atomicidad)
-    const spName = [1, 2, 3].includes(dto.tipoMovimiento)
-      ? 'PA_SELCTACTELISTASIGFE03'
-      : 'PA_SELCTACTELISTASIGFE07';
-
-    const cuentas = await this.oracle.executeStoredProcedure(spName, {
-      p_idproducto: { val: dto.productoId, dir: 3001 },
-      p_ejercicio: { val: dto.ejercicio, dir: 3001 },
-      p_cursor: { dir: 3003, type: 2021 },
+    // Register movement in cuenta_corriente
+    const [d, m, y] = dto.fechaContable.split('/').map(Number);
+    await this.ccRepo.save({
+      productoId: dto.productoId,
+      tipoMovimientoId: dto.tipoMovimiento,
+      cargoAbono: 2, // abono
+      fchMovimiento: new Date(y, m - 1, d),
+      fchContable: new Date(y, m - 1, d),
+      montoMov: 0,
+      idCliente: dto.rutUsuario,
+      anioAsiento: dto.ejercicio,
     });
 
-    // Generate SIGFE XML using env vars (no hardcoded values — fixes H3)
-    const sigfeParams = {
-      codigoInstitucion: this.config.get('SIGFE_CODIGO_INSTITUCION'),
-      correoNotificacion: this.config.get('SIGFE_CORREO_NOTIFICACION'),
-      unidad: dto.unidadSigfe,
-      ejercicio: dto.ejercicio,
-      fechaContable: dto.fechaContable,
-      codigoRegion: dto.codigoRegion,
+    return {
+      success: true,
+      sigfeConfig: {
+        codigoInstitucion: this.config.get('SIGFE_CODIGO_INSTITUCION'),
+        unidad: dto.unidadSigfe,
+        ejercicio: dto.ejercicio,
+        region: dto.codigoRegion,
+      },
     };
-
-    // Register SIGFE asiento
-    const result = await this.oracle.executeStoredProcedure('PA_INSASIENTOSIGFE01', {
-      p_idproducto: { val: dto.productoId, dir: 3001 },
-      p_tipomovimiento: { val: dto.tipoMovimiento, dir: 3001 },
-      p_fechacontable: { val: dto.fechaContable, dir: 3001 },
-      p_unidadsigfe: { val: dto.unidadSigfe, dir: 3001 },
-      p_ejercicio: { val: dto.ejercicio, dir: 3001 },
-      VAR_VALIDA: { dir: 3003, type: 2010 },
-      VAR_MENSAJE: { dir: 3003, type: 2001, maxSize: 200 },
-    });
-
-    // Update convenio cuotas if applicable
-    if (dto.cuotas?.length) {
-      await this.oracle.executeStoredProcedure('PA_UPDCENTRALIZARCUOTAS', {
-        p_idproducto: { val: dto.productoId, dir: 3001 },
-        p_cuotas: { val: dto.cuotas.join(','), dir: 3001 },
-        VAR_VALIDA: { dir: 3003, type: 2010 },
-      });
-    }
-
-    return { success: true, sigfeParams };
   }
 
   async generarCupon(dto: GenerarCuponDto, userId: number) {
     // Property 8: validate cuotas belong to same product
-    const cuotasCheck = await this.oracle.executeQuery(
-      `SELECT COUNT(*) AS CNT FROM CUOTA
-       WHERE PRODUCTO_IDPRODUCTO = :productoId AND IDCUOTAS IN (${dto.cuotaIds.map((_, i) => `:c${i}`).join(',')})`,
-      { productoId: dto.productoId, ...Object.fromEntries(dto.cuotaIds.map((id, i) => [`c${i}`, id])) },
-    );
-    const cnt = (cuotasCheck.rows[0] as any)?.CNT;
-    if (cnt !== dto.cuotaIds.length) {
+    const cuotas = await this.cuotaRepo.createQueryBuilder('cu')
+      .where('cu.productoId = :productoId', { productoId: dto.productoId })
+      .andWhere('cu.id IN (:...ids)', { ids: dto.cuotaIds })
+      .getMany();
+
+    if (cuotas.length !== dto.cuotaIds.length) {
       throw new UnprocessableEntityException('Todas las cuotas deben pertenecer al mismo contrato');
     }
 
-    // Check no active cupon for these cuotas
+    // Check no active cupon
     for (const cuotaId of dto.cuotaIds) {
-      const existing = await this.oracle.executeQuery(
-        `SELECT COUNT(*) AS CNT FROM CUOTACUPONPAGO WHERE IDPRODUCTO = :productoId AND IDCUOTA = :cuotaId`,
-        { productoId: dto.productoId, cuotaId },
-      );
-      if ((existing.rows[0] as any)?.CNT > 0) {
-        throw new ConflictException(`La cuota ${cuotaId} ya tiene un cupón emitido`);
-      }
+      const existing = await this.cuotaCuponRepo.findOne({
+        where: { productoId: dto.productoId, cuotaId },
+      });
+      if (existing) throw new ConflictException(`La cuota ${cuotaId} ya tiene un cupón emitido`);
     }
 
-    // Get cuota amounts
-    const cuotasData = await this.oracle.executeQuery(
-      `SELECT IDCUOTAS, CUMONTO, CUMONTOREAVALUO, CUCARGOREAVALUO, CUCARGOINTERES, CUCARGOCONVENIO
-       FROM CUOTA WHERE PRODUCTO_IDPRODUCTO = :productoId AND IDCUOTAS IN (${dto.cuotaIds.map((_, i) => `:c${i}`).join(',')})`,
-      { productoId: dto.productoId, ...Object.fromEntries(dto.cuotaIds.map((id, i) => [`c${i}`, id])) },
-    );
-
-    const cuotas = cuotasData.rows as any[];
-    const montoArriendo = cuotas.reduce((s, c) => s + (c.CUMONTO || 0), 0);
-    const montoReajuste = cuotas.reduce((s, c) => s + (c.CUMONTOREAVALUO || 0) + (c.CUCARGOREAVALUO || 0), 0);
-    const montoInteres = cuotas.reduce((s, c) => s + (c.CUCARGOINTERES || 0), 0);
-    const montoConvenio = cuotas.reduce((s, c) => s + (c.CUCARGOCONVENIO || 0), 0);
+    const montoArriendo = cuotas.reduce((s, c) => s + Number(c.monto), 0);
+    const montoReajuste = cuotas.reduce((s, c) => s + Number(c.montoReavaluo) + Number(c.cargoReavaluo), 0);
+    const montoInteres = cuotas.reduce((s, c) => s + Number(c.cargoInteres), 0);
+    const montoConvenio = cuotas.reduce((s, c) => s + Number(c.cargoConvenio), 0);
     const montoTotal = montoArriendo + montoReajuste + montoInteres + montoConvenio;
 
-    const folio = `CP${Date.now()}`;
+    const cupon = await this.cuponRepo.save({
+      productoId: dto.productoId,
+      folio: `CP${Date.now()}`,
+      origenCarga: dto.origenCarga === 'operador' ? 1 : dto.origenCarga === 'portal' ? 2 : 3,
+      usuarioCreacion: userId,
+      montoReajuste, montoInteres, montoConvenio, montoTotal, montoArriendo,
+    });
 
-    const cuponResult = await this.oracle.executeQuery(
-      `INSERT INTO CUPONPAGO (CPIDPRODUCTO, CPIDCLIENTE, FOLIO, CPFCHEMISION,
-        CPORIGENCARGA, CPUSUARIOCREACION, CPMONTOREAJUSTE, CPMONTOINTERES,
-        CPMONTOCONVENIO, CPMONTOTOTAL, CPMONTOARRIENDO)
-       SELECT :productoId, P.CLIENTE_IDCLIENTE, :folio, SYSDATE,
-              :origenCarga, :userId, :montoReajuste, :montoInteres,
-              :montoConvenio, :montoTotal, :montoArriendo
-       FROM PRODUCTO P WHERE P.IDPRODUCTO = :productoId2
-       RETURNING IDCUPONPAGO INTO :id`,
-      {
-        productoId: dto.productoId, folio, origenCarga: dto.origenCarga === 'operador' ? 1 : dto.origenCarga === 'portal' ? 2 : 3,
-        userId, montoReajuste, montoInteres, montoConvenio, montoTotal, montoArriendo,
-        productoId2: dto.productoId, id: { dir: 3003, type: 2010 },
-      },
-    );
-
-    const idCupon = (cuponResult.rows[0] as any)?.ID;
-
-    // Associate cuotas to cupon
     for (const cuota of cuotas) {
-      await this.oracle.executeQuery(
-        `INSERT INTO CUOTACUPONPAGO (IDCUPONPAGO, IDPRODUCTO, IDCUOTA, IDTIPOMOV, CCPMONTO)
-         VALUES (:idCupon, :productoId, :idCuota, 1, :monto)`,
-        { idCupon, productoId: dto.productoId, idCuota: cuota.IDCUOTAS, monto: cuota.CUMONTO },
-      );
+      await this.cuotaCuponRepo.save({
+        cuponPagoId: cupon.id, productoId: dto.productoId,
+        cuotaId: cuota.id, tipoMovId: 1, monto: cuota.monto,
+      });
     }
 
-    return { idCupon, folio, montoTotal };
+    return { id: cupon.id, folio: cupon.folio, montoTotal };
   }
 
   async procesarNotificacionTgr(dto: NotificacionTgrDto) {
-    // Property 6: idempotencia — check if already processed
-    const existing = await this.oracle.executeQuery(
-      `SELECT IDCUPON FROM PAGOSTGR WHERE IDOPERACION = :idOperacion`,
-      { idOperacion: dto.idOperacion },
-    );
+    // Property 6: idempotencia
+    const existing = await this.pagoTgrRepo.findOne({ where: { idOperacion: dto.idOperacion } });
+    if (existing) return { success: true, idempotent: true };
 
-    if ((existing.rows as any[]).length > 0) {
-      // Already processed — return success without side effects
-      return { success: true, idempotent: true };
-    }
-
-    // Register TGR payment
-    await this.oracle.executeQuery(
-      `INSERT INTO PAGOSTGR (IDCUPON, IDEXT, STATUS, IDOPERACION, IDTRANSACCION,
-        FOLIO, TOTALPAGO, FECHAPAGO, RESULTADO, TIPOPAGO)
-       VALUES (:cuponId, :idOperacion, :estado, :idOperacion, :idTransaccion,
-               :cuponId, :monto, TO_DATE(:fechaPago, 'DD/MM/YYYY'), :estado, 'TGR')`,
-      {
-        cuponId: dto.cuponId, idOperacion: dto.idOperacion, estado: dto.estado,
-        idTransaccion: dto.idTransaccion, monto: dto.monto, fechaPago: dto.fechaPago,
-      },
-    );
+    await this.pagoTgrRepo.save({
+      cuponId: dto.cuponId,
+      idOperacion: dto.idOperacion,
+      idTransaccion: dto.idTransaccion,
+      status: dto.estado,
+      totalPago: dto.monto,
+      resultado: dto.estado,
+      tipoPago: 'TGR',
+    });
 
     if (dto.estado === 'exitoso') {
-      // Mark cuota as paid
-      await this.oracle.executeQuery(
-        `UPDATE CUOTA SET ESTADOCUOTA_IDESTADOCUOTA = 2, CUFCHPAGO = SYSDATE
-         WHERE (PRODUCTO_IDPRODUCTO, IDCUOTAS) IN (
-           SELECT IDPRODUCTO, IDCUOTA FROM CUOTACUPONPAGO WHERE IDCUPONPAGO = :cuponId
-         )`,
-        { cuponId: dto.cuponId },
-      );
+      const cuotaIds = await this.cuotaCuponRepo.find({ where: { cuponPagoId: dto.cuponId } });
+      for (const cc of cuotaIds) {
+        await this.cuotaRepo.update(cc.cuotaId, { estadoCuotaId: 2, fchPago: new Date() });
+      }
     }
 
     return { success: true, idempotent: false };
   }
 
   async cargarBanco(dto: CargaBancoDto) {
-    const tablaMap: any = { arriendo: 'CARGABANCO', venta: 'CARGABANCOVENTA', concesion: 'CARGABANCOCONCESION' };
-    const tabla = tablaMap[dto.tipo] || 'CARGABANCO';
     let procesados = 0, errores = 0;
-
     for (const reg of dto.registros) {
       try {
-        await this.oracle.executeQuery(
-          `INSERT INTO ${tabla} (CBNFOLIO, CBFECHA, CBMONTO, CBOFICINA, CBNFECHACONTABLE, EXITO, FECHAACTUALIZA)
-           VALUES (:folio, TO_DATE(:fecha, 'DD/MM/YYYY'), :monto, :oficina, TO_DATE(:fechaContable, 'DD/MM/YYYY'), 1, SYSTIMESTAMP)`,
-          { folio: reg.folio, fecha: reg.fecha, monto: reg.monto, oficina: reg.oficina || null, fechaContable: reg.fechaContable || reg.fecha },
-        );
+        const existing = await this.cargaBancoRepo.findOne({ where: { folio: reg.folio } });
+        if (!existing) {
+          await this.cargaBancoRepo.save({
+            folio: reg.folio,
+            fecha: new Date(reg.fecha.split('/').reverse().join('-')),
+            monto: reg.monto,
+            oficina: reg.oficina,
+            fchContable: reg.fechaContable ? new Date(reg.fechaContable.split('/').reverse().join('-')) : null,
+            exito: true,
+            tipoCartera: dto.tipo,
+            fchActualiza: new Date(),
+          });
+        }
         procesados++;
-      } catch {
-        errores++;
-      }
+      } catch { errores++; }
     }
-
     return { total: dto.registros.length, procesados, errores };
   }
 }

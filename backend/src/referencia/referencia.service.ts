@@ -1,84 +1,83 @@
 import { Injectable, UnprocessableEntityException } from '@nestjs/common';
-import { OracleService } from '../common/oracle/oracle.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Region } from '../common/database/entities/region.entity';
+import { Comuna } from '../common/database/entities/comuna.entity';
+import { TipoProducto } from '../common/database/entities/tipo-producto.entity';
+import { EstadoProducto } from '../common/database/entities/estado-producto.entity';
+import { EstadoCuota } from '../common/database/entities/estado-cuota.entity';
+import { TipoCobranza } from '../common/database/entities/tipo-cobranza.entity';
+import { IndiceIpc } from '../common/database/entities/indice-ipc.entity';
+import { ValorUf } from '../common/database/entities/valor-uf.entity';
+import { InteresPenal } from '../common/database/entities/interes-penal.entity';
 
 @Injectable()
 export class ReferenciaService {
-  constructor(private oracle: OracleService) {}
+  constructor(
+    @InjectRepository(Region) private regionRepo: Repository<Region>,
+    @InjectRepository(Comuna) private comunaRepo: Repository<Comuna>,
+    @InjectRepository(TipoProducto) private tipoProductoRepo: Repository<TipoProducto>,
+    @InjectRepository(EstadoProducto) private estadoProductoRepo: Repository<EstadoProducto>,
+    @InjectRepository(EstadoCuota) private estadoCuotaRepo: Repository<EstadoCuota>,
+    @InjectRepository(TipoCobranza) private tipoCobranzaRepo: Repository<TipoCobranza>,
+    @InjectRepository(IndiceIpc) private ipcRepo: Repository<IndiceIpc>,
+    @InjectRepository(ValorUf) private ufRepo: Repository<ValorUf>,
+    @InjectRepository(InteresPenal) private interesRepo: Repository<InteresPenal>,
+  ) {}
 
-  // IPC
-  getIPC(filters: any) {
-    return this.oracle.executeQuery('SELECT * FROM INDICE_IPC ORDER BY AGNO DESC, MES DESC', {});
-  }
-  upsertIPC(mes: number, agno: number, valor: number, variacion: number) {
-    return this.oracle.executeQuery(
-      `MERGE INTO INDICE_IPC USING DUAL ON (MES = :mes AND AGNO = :agno)
-       WHEN MATCHED THEN UPDATE SET VALOR_INDICE = :valor, VARIACION = :variacion
-       WHEN NOT MATCHED THEN INSERT (MES, AGNO, VALOR_INDICE, VARIACION) VALUES (:mes, :agno, :valor, :variacion)`,
-      { mes, agno, valor, variacion },
-    );
-  }
+  getRegiones() { return this.regionRepo.find({ order: { id: 'ASC' } }); }
 
-  // UF
-  getUF(filters: any) {
-    return this.oracle.executeQuery('SELECT * FROM VALOR_UF ORDER BY FECHA DESC FETCH FIRST 30 ROWS ONLY', {});
-  }
-  upsertUF(fecha: string, valor: number) {
-    return this.oracle.executeQuery(
-      `MERGE INTO VALOR_UF USING DUAL ON (FECHA = TO_DATE(:fecha, 'DD/MM/YYYY'))
-       WHEN MATCHED THEN UPDATE SET VALOR = :valor
-       WHEN NOT MATCHED THEN INSERT (FECHA, VALOR) VALUES (TO_DATE(:fecha, 'DD/MM/YYYY'), :valor)`,
-      { fecha, valor },
-    );
+  getComunas(regionId?: number) {
+    return this.comunaRepo.find({
+      where: regionId ? { regionId } : {},
+      order: { nombre: 'ASC' },
+    });
   }
 
-  // Interés penal
-  getInteresPenal() {
-    return this.oracle.executeQuery('SELECT * FROM INTERESPENAL ORDER BY IP_YEAR DESC, IP_MES DESC', {});
+  getTiposProducto() { return this.tipoProductoRepo.find(); }
+  getEstadosProducto() { return this.estadoProductoRepo.find(); }
+  getEstadosCuota() { return this.estadoCuotaRepo.find(); }
+  getTiposCobranza() { return this.tipoCobranzaRepo.find(); }
+
+  getIPC() { return this.ipcRepo.find({ order: { agno: 'DESC', mes: 'DESC' } }); }
+
+  async upsertIPC(mes: number, agno: number, valor: number, variacion: number) {
+    const existing = await this.ipcRepo.findOne({ where: { mes, agno } });
+    if (existing) {
+      await this.ipcRepo.update(existing.id, { valorIndice: valor, variacion });
+    } else {
+      await this.ipcRepo.save({ mes, agno, valorIndice: valor, variacion });
+    }
+    return { success: true };
   }
 
-  // Feriados
-  getFeriados() {
-    return this.oracle.executeQuery('SELECT * FROM FERIADO ORDER BY FMES, FDIA', {});
+  getUF() { return this.ufRepo.find({ order: { fecha: 'DESC' }, take: 30 }); }
+
+  async upsertUF(fecha: string, valor: number) {
+    const fechaDate = new Date(fecha.split('/').reverse().join('-'));
+    const existing = await this.ufRepo.findOne({ where: { fecha: fechaDate } });
+    if (existing) {
+      await this.ufRepo.update(existing.id, { valor });
+    } else {
+      await this.ufRepo.save({ fecha: fechaDate, valor });
+    }
+    return { success: true };
   }
 
-  // Ley presupuestaria
-  getLeyPresupuestaria() {
-    return this.oracle.executeQuery('SELECT * FROM LEYPRESUPUESTARIA ORDER BY ID', {});
-  }
+  getInteresPenal() { return this.interesRepo.find({ order: { agno: 'DESC', mes: 'DESC' } }); }
 
   // Property 10: get index for specific date
   async getIndiceParaFecha(fecha: string, tipoBase: number): Promise<number> {
-    let result: any;
-    if (tipoBase === 1) { // IPC
-      const [d, m, y] = fecha.split('/').map(Number);
-      result = await this.oracle.executeQuery(
-        'SELECT VALOR_INDICE FROM INDICE_IPC WHERE MES = :mes AND AGNO = :agno',
-        { mes: m, agno: y },
-      );
-    } else { // UF
-      result = await this.oracle.executeQuery(
-        'SELECT VALOR FROM VALOR_UF WHERE FECHA = TO_DATE(:fecha, \'DD/MM/YYYY\')',
-        { fecha },
-      );
+    if (tipoBase === 1) {
+      const [, m, y] = fecha.split('/').map(Number);
+      const row = await this.ipcRepo.findOne({ where: { mes: m, agno: y } });
+      if (!row) throw new UnprocessableEntityException(`No existe IPC para ${m}/${y}`);
+      return row.valorIndice;
+    } else {
+      const fechaDate = new Date(fecha.split('/').reverse().join('-'));
+      const row = await this.ufRepo.findOne({ where: { fecha: fechaDate } });
+      if (!row) throw new UnprocessableEntityException(`No existe UF para la fecha ${fecha}`);
+      return row.valor;
     }
-    const row = result.rows[0] as any;
-    if (!row) {
-      throw new UnprocessableEntityException(
-        `No existe índice ${tipoBase === 1 ? 'IPC' : 'UF'} para la fecha ${fecha}`,
-      );
-    }
-    return row.VALOR_INDICE || row.VALOR;
   }
-
-  // Tablas de referencia
-  getRegiones() { return this.oracle.executeQuery('SELECT * FROM REGION ORDER BY IDREGION', {}); }
-  getComunas(regionId?: number) {
-    const where = regionId ? 'WHERE REGION_IDREGION = :regionId' : '';
-    return this.oracle.executeQuery(`SELECT * FROM COMUNA ${where} ORDER BY CONOMBRE`, regionId ? { regionId } : {});
-  }
-  getTiposProducto() { return this.oracle.executeQuery('SELECT * FROM TIPOPRODUCTO', {}); }
-  getTiposUso() { return this.oracle.executeQuery('SELECT * FROM TIPOUSO', {}); }
-  getTiposCobranza() { return this.oracle.executeQuery('SELECT * FROM TIPOCOBRANZA', {}); }
-  getEstadosProducto() { return this.oracle.executeQuery('SELECT * FROM ESTADOPRODUCTO', {}); }
-  getEstadosCuota() { return this.oracle.executeQuery('SELECT * FROM ESTADOCUOTA', {}); }
 }

@@ -1,69 +1,60 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { OracleService } from '../common/oracle/oracle.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Usuario } from '../common/database/entities/usuario.entity';
+import { Cliente } from '../common/database/entities/cliente.entity';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private oracle: OracleService,
+    @InjectRepository(Usuario) private usuarioRepo: Repository<Usuario>,
+    @InjectRepository(Cliente) private clienteRepo: Repository<Cliente>,
     private jwt: JwtService,
     private config: ConfigService,
   ) {}
 
   async login(login: string, password: string) {
-    const result = await this.oracle.executeQuery(
-      `SELECT IDUSUARIO, USLOGIN, USPASSW, USNOMBRE, USAPELLIDOPATERNO,
-              PERFIL_IDPERFIL, USREGIONUSUARIO, USESTADOUSUARIO
-       FROM USUARIO WHERE USLOGIN = :login`,
-      { login },
-    );
+    const user = await this.usuarioRepo.findOne({ where: { login }, relations: ['perfil'] });
 
-    const user = result.rows[0] as any;
-    if (!user || user.USESTADOUSUARIO !== 1) {
+    if (!user || user.estado !== 1) {
       throw new UnauthorizedException('Credenciales incorrectas');
     }
 
-    // Support both plain (legacy) and bcrypt passwords during migration
+    // Support bcrypt and legacy plain passwords during migration
     let valid = false;
-    if (user.USPASSW?.startsWith('$2b$') || user.USPASSW?.startsWith('$2a$')) {
-      valid = await bcrypt.compare(password, user.USPASSW);
+    if (user.password?.startsWith('$2b$') || user.password?.startsWith('$2a$')) {
+      valid = await bcrypt.compare(password, user.password);
     } else {
-      // Legacy: plain text or MD5 — compare directly during migration period
-      valid = user.USPASSW === password;
+      valid = user.password === password;
     }
 
     if (!valid) throw new UnauthorizedException('Credenciales incorrectas');
 
     return this.generateTokens({
-      sub: user.IDUSUARIO,
-      login: user.USLOGIN,
-      perfilId: user.PERFIL_IDPERFIL,
-      region: user.USREGIONUSUARIO,
-      nombre: `${user.USNOMBRE} ${user.USAPELLIDOPATERNO}`,
+      sub: user.id,
+      login: user.login,
+      perfilId: user.perfilId,
+      region: user.regionId,
+      nombre: `${user.nombre} ${user.apellidoPaterno}`,
     });
   }
 
   async portalLogin(rut: number, password: string) {
-    const result = await this.oracle.executeQuery(
-      `SELECT IDCLIENTE, CLRUT, CLDV, CLNOMBRE, CLPASSWORD
-       FROM CLIENTE WHERE CLRUT = :rut`,
-      { rut },
-    );
-
-    const cliente = result.rows[0] as any;
+    const cliente = await this.clienteRepo.findOne({ where: { rut } });
     if (!cliente) throw new UnauthorizedException('Credenciales incorrectas');
 
-    const valid = await bcrypt.compare(password, cliente.CLPASSWORD || '');
+    const valid = await bcrypt.compare(password, cliente.password || '');
     if (!valid) throw new UnauthorizedException('Credenciales incorrectas');
 
     return this.generateTokens({
-      sub: cliente.IDCLIENTE,
-      login: `${cliente.CLRUT}-${cliente.CLDV}`,
-      perfilId: 99, // portal client profile
+      sub: cliente.id,
+      login: `${cliente.rut}-${cliente.dv}`,
+      perfilId: 99,
       region: 0,
-      nombre: cliente.CLNOMBRE,
+      nombre: cliente.nombre,
       isPortal: true,
     });
   }
@@ -71,15 +62,12 @@ export class AuthService {
   async refresh(refreshToken: string) {
     try {
       const payload = this.jwt.verify(refreshToken, {
-        secret: this.config.get('JWT_REFRESH_SECRET') || 'refresh-secret-change-in-production',
+        secret: this.config.get('JWT_REFRESH_SECRET') || 'refresh-secret',
       });
       return this.generateTokens({
-        sub: payload.sub,
-        login: payload.login,
-        perfilId: payload.perfilId,
-        region: payload.region,
-        nombre: payload.nombre,
-        isPortal: payload.isPortal,
+        sub: payload.sub, login: payload.login,
+        perfilId: payload.perfilId, region: payload.region,
+        nombre: payload.nombre, isPortal: payload.isPortal,
       });
     } catch {
       throw new UnauthorizedException('Sesión expirada, por favor inicie sesión nuevamente');
@@ -87,14 +75,12 @@ export class AuthService {
   }
 
   private generateTokens(payload: object) {
-    const accessToken = this.jwt.sign(payload, {
-      secret: this.config.get('JWT_SECRET') || 'default-secret-change-in-production',
-      expiresIn: '8h',
-    });
-    const refreshToken = this.jwt.sign(payload, {
-      secret: this.config.get('JWT_REFRESH_SECRET') || 'refresh-secret-change-in-production',
-      expiresIn: '24h',
-    });
-    return { accessToken, refreshToken, expiresIn: 8 * 3600 };
+    const secret = this.config.get('JWT_SECRET') || 'default-secret';
+    const refreshSecret = this.config.get('JWT_REFRESH_SECRET') || 'refresh-secret';
+    return {
+      accessToken: this.jwt.sign(payload, { secret, expiresIn: '8h' }),
+      refreshToken: this.jwt.sign(payload, { secret: refreshSecret, expiresIn: '24h' }),
+      expiresIn: 8 * 3600,
+    };
   }
 }

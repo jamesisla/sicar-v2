@@ -1,153 +1,117 @@
 import { Injectable, ConflictException } from '@nestjs/common';
-import { OracleService } from '../common/oracle/oracle.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Cliente } from '../common/database/entities/cliente.entity';
+import { Persona } from '../common/database/entities/persona.entity';
+import { Empresa } from '../common/database/entities/empresa.entity';
+import { Domicilio } from '../common/database/entities/domicilio.entity';
+import { Contacto } from '../common/database/entities/contacto.entity';
 import { CreatePersonaNaturalDto, CreatePersonaJuridicaDto, AddDomicilioDto, AddContactoDto } from './dto/cliente.dto';
 
 @Injectable()
 export class ClientesRepository {
-  constructor(private oracle: OracleService) {}
+  constructor(
+    @InjectRepository(Cliente) private clienteRepo: Repository<Cliente>,
+    @InjectRepository(Persona) private personaRepo: Repository<Persona>,
+    @InjectRepository(Empresa) private empresaRepo: Repository<Empresa>,
+    @InjectRepository(Domicilio) private domicilioRepo: Repository<Domicilio>,
+    @InjectRepository(Contacto) private contactoRepo: Repository<Contacto>,
+  ) {}
 
-  async findAll(filters: { rut?: number; nombre?: string; page?: number; pageSize?: number }) {
+  findAll(filters: { rut?: number; nombre?: string; page?: number; pageSize?: number }) {
     const { rut, nombre, page = 1, pageSize = 20 } = filters;
-    const conditions: string[] = [];
-    const binds: any = {};
+    const qb = this.clienteRepo.createQueryBuilder('c')
+      .leftJoinAndSelect('c.tipoCliente', 'tc')
+      .skip((page - 1) * pageSize)
+      .take(pageSize)
+      .orderBy('c.nombre', 'ASC');
 
-    if (rut) { conditions.push('C.CLRUT = :rut'); binds.rut = rut; }
-    if (nombre) { conditions.push('UPPER(C.CLNOMBRE) LIKE UPPER(:nombre)'); binds.nombre = `%${nombre}%`; }
+    if (rut) qb.andWhere('c.rut = :rut', { rut });
+    if (nombre) qb.andWhere('UPPER(c.nombre) LIKE UPPER(:nombre)', { nombre: `%${nombre}%` });
 
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const offset = (page - 1) * pageSize;
-
-    const sql = `
-      SELECT C.IDCLIENTE, C.CLRUT, C.CLDV, C.CLNOMBRE, C.CLFONOCONTACTO,
-             C.CLMAILCONTACTO, C.TIPOCLIENTE_IDTIPOCLIENTE, TC.TCDESCRIPCION
-      FROM CLIENTE C
-      JOIN TIPOCLIENTE TC ON TC.IDTIPOCLIENTE = C.TIPOCLIENTE_IDTIPOCLIENTE
-      ${where}
-      ORDER BY C.CLNOMBRE
-      OFFSET :offset ROWS FETCH NEXT :pageSize ROWS ONLY`;
-
-    binds.offset = offset;
-    binds.pageSize = pageSize;
-    return this.oracle.executeQuery(sql, binds);
+    return qb.getManyAndCount();
   }
 
-  async findById(id: number) {
-    const result = await this.oracle.executeQuery(
-      `SELECT C.*, TC.TCDESCRIPCION AS TIPOCLIENTE_DESC
-       FROM CLIENTE C
-       JOIN TIPOCLIENTE TC ON TC.IDTIPOCLIENTE = C.TIPOCLIENTE_IDTIPOCLIENTE
-       WHERE C.IDCLIENTE = :id`,
-      { id },
-    );
-    return result.rows[0];
+  findById(id: number) {
+    return this.clienteRepo.findOne({
+      where: { id },
+      relations: ['tipoCliente', 'comuna'],
+    });
   }
 
-  async findByRut(rut: number) {
-    const result = await this.oracle.executeQuery(
-      'SELECT IDCLIENTE FROM CLIENTE WHERE CLRUT = :rut',
-      { rut },
-    );
-    return result.rows[0];
+  findByRut(rut: number) {
+    return this.clienteRepo.findOne({ where: { rut } });
   }
 
   async createPersonaNatural(dto: CreatePersonaNaturalDto, userId: number) {
     const existing = await this.findByRut(dto.rut);
     if (existing) throw new ConflictException('El RUT ingresado ya está registrado');
 
-    // Insert CLIENTE (tipo 1 = persona natural)
-    const clienteResult = await this.oracle.executeQuery(
-      `INSERT INTO CLIENTE (TIPOCLIENTE_IDTIPOCLIENTE, CLNOMBRE, CLRUT, CLDV,
-        CLFONOCONTACTO, CLMAILCONTACTO, CLINGRESOMES, CLFCHACTUALIZADA, CLUSUARIOACTUALIZA)
-       VALUES (1, :nombre, :rut, :dv, :telefono, :email, :rentaMensual, SYSDATE, :userId)
-       RETURNING IDCLIENTE INTO :id`,
-      {
-        nombre: `${dto.nombre} ${dto.apellidoPaterno} ${dto.apellidoMaterno || ''}`.trim(),
-        rut: dto.rut, dv: dto.dv, telefono: dto.telefono || null,
-        email: dto.email || null, rentaMensual: dto.rentaMensual || null,
-        userId,
-        id: { dir: 3003, type: 2010 }, // OUT bind
-      },
-    );
+    const cliente = this.clienteRepo.create({
+      tipoClienteId: 1,
+      nombre: `${dto.nombre} ${dto.apellidoPaterno} ${dto.apellidoMaterno || ''}`.trim(),
+      rut: dto.rut, dv: dto.dv,
+      fonoContacto: dto.telefono,
+      mailContacto: dto.email,
+      ingresoMes: dto.rentaMensual,
+      usuarioActualiza: userId,
+    });
+    const saved = await this.clienteRepo.save(cliente);
 
-    const idCliente = (clienteResult.rows[0] as any)?.ID;
+    await this.personaRepo.save({
+      clienteId: saved.id,
+      rut: dto.rut, dv: dto.dv,
+      nombre: dto.nombre,
+      apellidoPaterno: dto.apellidoPaterno,
+      apellidoMaterno: dto.apellidoMaterno,
+      profesion: dto.profesion,
+      email: dto.email,
+      sexo: dto.sexo,
+      nacionalidadId: dto.nacionalidad,
+      estadoCivilId: dto.estadoCivil,
+      usuarioActualiza: userId,
+    });
 
-    // Insert PERSONA
-    await this.oracle.executeQuery(
-      `INSERT INTO PERSONA (CLIENTE_IDCLIENTE, PERUT, PEDV, PENOMBRE,
-        PEAPELLIDOPATERNO, PEAPELLIDOMATERNO, PEPROFESION, PEEMAIL,
-        SEXO_IDSEXO, NACIONALIDAD_IDNACIONALIDAD, ESTADOPRODUCTO_CIVIL_IDESTADO,
-        PEFCHACTUALIZA, PEUSUARIOACTUALIZA)
-       VALUES (:idCliente, :rut, :dv, :nombre, :apellidoPaterno, :apellidoMaterno,
-               :profesion, :email, :sexo, :nacionalidad, :estadoCivil, SYSDATE, :userId)`,
-      {
-        idCliente, rut: dto.rut, dv: dto.dv, nombre: dto.nombre,
-        apellidoPaterno: dto.apellidoPaterno, apellidoMaterno: dto.apellidoMaterno || null,
-        profesion: dto.profesion || null, email: dto.email || null,
-        sexo: dto.sexo || null, nacionalidad: dto.nacionalidad || null,
-        estadoCivil: dto.estadoCivil || null, userId,
-      },
-    );
-
-    return { idCliente };
+    return { id: saved.id };
   }
 
   async createPersonaJuridica(dto: CreatePersonaJuridicaDto, userId: number) {
     const existing = await this.findByRut(dto.rut);
     if (existing) throw new ConflictException('El RUT ingresado ya está registrado');
 
-    const clienteResult = await this.oracle.executeQuery(
-      `INSERT INTO CLIENTE (TIPOCLIENTE_IDTIPOCLIENTE, CLNOMBRE, CLRUT, CLDV,
-        CLFCHACTUALIZADA, CLUSUARIOACTUALIZA)
-       VALUES (2, :razonSocial, :rut, :dv, SYSDATE, :userId)
-       RETURNING IDCLIENTE INTO :id`,
-      {
-        razonSocial: dto.razonSocial, rut: dto.rut, dv: dto.dv, userId,
-        id: { dir: 3003, type: 2010 },
-      },
-    );
+    const cliente = this.clienteRepo.create({
+      tipoClienteId: 2,
+      nombre: dto.razonSocial,
+      rut: dto.rut, dv: dto.dv,
+      usuarioActualiza: userId,
+    });
+    const saved = await this.clienteRepo.save(cliente);
 
-    const idCliente = (clienteResult.rows[0] as any)?.ID;
+    await this.empresaRepo.save({
+      clienteId: saved.id,
+      razonSocial: dto.razonSocial,
+      giro: dto.giro,
+      rutRepLegal: dto.repLegalRut,
+      dvRepLegal: dto.repLegalDv,
+      nombreRepLegal: dto.repLegalNombre,
+      apellidoPaternoRep: dto.repLegalApellidoPaterno,
+      apellidoMaternoRep: dto.repLegalApellidoMaterno,
+    });
 
-    await this.oracle.executeQuery(
-      `INSERT INTO EMPRESA (CLIENTE_IDCLIENTE, EMRAZONSOCIAL, EMGIRO,
-        EMRUTREPLEGAL, EMDVREPLEGAL, EMNOMBREREPLEGAL,
-        EMAPELLIDOPATERNOREP, EMAPELLIDOMATERNOREP)
-       VALUES (:idCliente, :razonSocial, :giro, :repRut, :repDv,
-               :repNombre, :repApellidoPaterno, :repApellidoMaterno)`,
-      {
-        idCliente, razonSocial: dto.razonSocial, giro: dto.giro || null,
-        repRut: dto.repLegalRut, repDv: dto.repLegalDv,
-        repNombre: dto.repLegalNombre, repApellidoPaterno: dto.repLegalApellidoPaterno,
-        repApellidoMaterno: dto.repLegalApellidoMaterno || null,
-      },
-    );
-
-    return { idCliente };
+    return { id: saved.id };
   }
 
-  async addDomicilio(clienteId: number, dto: AddDomicilioDto) {
-    return this.oracle.executeQuery(
-      `INSERT INTO DOMICILIO (CLIENTE_IDCLIENTE, COMUNA_IDCOMUNA, DOMCALLE,
-        DOMBLOCK, DOMDEPTOOFICINA, DOMVILLALOCALIDAD, DOMFCHCREACION)
-       VALUES (:clienteId, :comunaId, :calle, :block, :deptoOficina, :villaLocalidad, SYSDATE)`,
-      {
-        clienteId, comunaId: dto.comunaId, calle: dto.calle,
-        block: dto.block || null, deptoOficina: dto.deptoOficina || null,
-        villaLocalidad: dto.villaLocalidad || null,
-      },
-    );
+  addDomicilio(clienteId: number, dto: AddDomicilioDto) {
+    return this.domicilioRepo.save({
+      clienteId, comunaId: dto.comunaId, calle: dto.calle,
+      block: dto.block, deptoOficina: dto.deptoOficina, villaLocalidad: dto.villaLocalidad,
+    });
   }
 
-  async addContacto(clienteId: number, dto: AddContactoDto) {
-    return this.oracle.executeQuery(
-      `INSERT INTO CONTACTO (CLIENTE_IDCLIENTE, CONOMBRE, COCARGORELACION,
-        COMAIL, CONUMEROFIJO, CONUMEROMOVIL)
-       VALUES (:clienteId, :nombre, :cargoRelacion, :email, :numeroFijo, :numeroMovil)`,
-      {
-        clienteId, nombre: dto.nombre, cargoRelacion: dto.cargoRelacion || null,
-        email: dto.email || null, numeroFijo: dto.numeroFijo || null,
-        numeroMovil: dto.numeroMovil || null,
-      },
-    );
+  addContacto(clienteId: number, dto: AddContactoDto) {
+    return this.contactoRepo.save({
+      clienteId, nombre: dto.nombre, cargoRelacion: dto.cargoRelacion,
+      email: dto.email, numeroFijo: dto.numeroFijo, numeroMovil: dto.numeroMovil,
+    });
   }
 }

@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { OracleModule } from './common/oracle/oracle.module';
+import { DatabaseModule } from './common/database/database.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { ClientesModule } from './clientes/clientes.module';
@@ -19,7 +19,7 @@ import { CodigosBarraModule } from './codigos-barra/codigos-barra.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    OracleModule,
+    DatabaseModule,
     HealthModule,
     AuthModule,
     ClientesModule,
