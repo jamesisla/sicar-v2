@@ -97,7 +97,7 @@ ON CONFLICT (id) DO NOTHING;
 -- Usuario administrador por defecto (password: admin123)
 INSERT INTO usuario (id, perfil_id, nombre, apellido_paterno, rut, dv, region_id, estado, login, password, correo)
 VALUES (1, 1, 'Admin', 'Sistema', 11111111, '1', 90, 1, 'admin',
-  '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', -- password: admin123
+  '$2b$10$awbQeoOObTN3iolx6L5Jju5zSQl7WzVUEGgHXIJrLH9DORR7zRwHq', -- password: admin123
   'admin@sicar.cl')
 ON CONFLICT (id) DO NOTHING;
 
@@ -121,8 +121,8 @@ INSERT INTO valor_uf (fecha, valor) VALUES
 ON CONFLICT (fecha) DO NOTHING;
 
 -- Cliente de ejemplo
-INSERT INTO cliente (id, tipo_cliente_id, nombre, rut, dv, fono_contacto, mail_contacto, region_id)
-VALUES (1, 1, 'Juan Pérez González', 12345678, '5', '+56912345678', 'juan.perez@ejemplo.cl', 13)
+INSERT INTO cliente (id, tipo_cliente_id, nombre, rut, dv, fono_contacto, mail_contacto)
+VALUES (1, 1, 'Juan Pérez González', 12345678, '5', '+56912345678', 'juan.perez@ejemplo.cl')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO persona (cliente_id, rut, dv, nombre, apellido_paterno, apellido_materno)

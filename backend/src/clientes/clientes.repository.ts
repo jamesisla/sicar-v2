@@ -6,6 +6,8 @@ import { Persona } from '../common/database/entities/persona.entity';
 import { Empresa } from '../common/database/entities/empresa.entity';
 import { Domicilio } from '../common/database/entities/domicilio.entity';
 import { Contacto } from '../common/database/entities/contacto.entity';
+import { Producto } from '../common/database/entities/producto.entity';
+import { ContratoArriendo } from '../common/database/entities/contrato-arriendo.entity';
 import { CreatePersonaNaturalDto, CreatePersonaJuridicaDto, AddDomicilioDto, AddContactoDto } from './dto/cliente.dto';
 
 @Injectable()
@@ -16,6 +18,7 @@ export class ClientesRepository {
     @InjectRepository(Empresa) private empresaRepo: Repository<Empresa>,
     @InjectRepository(Domicilio) private domicilioRepo: Repository<Domicilio>,
     @InjectRepository(Contacto) private contactoRepo: Repository<Contacto>,
+    @InjectRepository(Producto) private productoRepo: Repository<Producto>,
   ) {}
 
   findAll(filters: { rut?: number; nombre?: string; page?: number; pageSize?: number }) {
@@ -37,6 +40,25 @@ export class ClientesRepository {
       where: { id },
       relations: ['tipoCliente', 'comuna'],
     });
+  }
+
+  async findByIdDetalle(id: number) {
+    const [cliente, persona, empresa, domicilios, contactos, contratos] = await Promise.all([
+      this.clienteRepo.findOne({ where: { id }, relations: ['tipoCliente', 'comuna'] }),
+      this.personaRepo.findOne({ where: { clienteId: id } }),
+      this.empresaRepo.findOne({ where: { clienteId: id } }),
+      this.domicilioRepo.find({ where: { clienteId: id }, relations: ['comuna'] }),
+      this.contactoRepo.find({ where: { clienteId: id } }),
+      this.productoRepo.createQueryBuilder('p')
+        .innerJoinAndSelect('p.estadoProducto', 'ep')
+        .innerJoinAndSelect('p.tipoProducto', 'tp')
+        .innerJoinAndSelect('p.inmueble', 'i')
+        .leftJoinAndMapOne('p.contrato', ContratoArriendo, 'ca', 'ca.productoId = p.id')
+        .where('p.clienteId = :id', { id })
+        .orderBy('p.id', 'DESC')
+        .getMany(),
+    ]);
+    return { cliente, persona, empresa, domicilios, contactos, contratos };
   }
 
   findByRut(rut: number) {

@@ -3,11 +3,11 @@ import { useState } from 'react';
 import { Sidebar } from '../../components/layout/sidebar';
 import { api } from '../../lib/api';
 
-const estadoColors: any = {
-  'Activo': 'bg-green-100 text-green-700',
-  'Moroso': 'bg-red-100 text-red-700',
-  'En CDE': 'bg-purple-100 text-purple-700',
-  'Terminado': 'bg-gray-100 text-gray-600',
+const estadoBadge: Record<string, string> = {
+  'Activo': 'badge-green',
+  'Moroso': 'badge-red',
+  'En CDE': 'badge-purple',
+  'Terminado': 'badge-gray',
 };
 
 export default function ContratosPage() {
@@ -30,68 +30,98 @@ export default function ContratosPage() {
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar />
-      <main className="flex-1 p-8">
-        <h1 className="text-xl font-semibold mb-1">Contratos</h1>
-        <p className="text-sm text-muted-foreground mb-6">Gestión de contratos de arriendo, venta y concesión</p>
+      <main style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
+        <div className="page-header">
+          <h1 className="page-title">Contratos</h1>
+          <p className="page-subtitle">Gestión de contratos de arriendo, venta y concesión</p>
+        </div>
 
-        <form onSubmit={handleSearch} className="flex gap-3 mb-6">
-          <select
-            value={filters.tipo}
-            onChange={e => setFilters({ ...filters, tipo: e.target.value })}
-            className="rounded-md border bg-background px-3 py-2 text-sm"
-          >
-            <option value="1">Arriendo</option>
-            <option value="2">Venta</option>
-            <option value="3">Concesión</option>
-          </select>
-          <select
-            value={filters.estado}
-            onChange={e => setFilters({ ...filters, estado: e.target.value })}
-            className="rounded-md border bg-background px-3 py-2 text-sm"
-          >
-            <option value="">Todos los estados</option>
-            <option value="1">Activo</option>
-            <option value="5">Moroso</option>
-            <option value="6">En CDE</option>
-            <option value="3">Terminado</option>
-          </select>
-          <button type="submit" disabled={loading}
-            className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-            {loading ? 'Cargando...' : 'Buscar'}
+        {/* Filters */}
+        <form onSubmit={handleSearch} style={{ display: 'flex', gap: '10px', marginBottom: '24px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div>
+            <label className="form-label">Tipo de contrato</label>
+            <select
+              value={filters.tipo}
+              onChange={e => setFilters({ ...filters, tipo: e.target.value })}
+              className="form-input"
+              style={{ width: 'auto' }}
+            >
+              <option value="1">Arriendo</option>
+              <option value="2">Venta</option>
+              <option value="3">Concesión</option>
+            </select>
+          </div>
+          <div>
+            <label className="form-label">Estado</label>
+            <select
+              value={filters.estado}
+              onChange={e => setFilters({ ...filters, estado: e.target.value })}
+              className="form-input"
+              style={{ width: 'auto' }}
+            >
+              <option value="">Todos los estados</option>
+              <option value="1">Activo</option>
+              <option value="5">Moroso</option>
+              <option value="6">En CDE</option>
+              <option value="3">Terminado</option>
+            </select>
+          </div>
+          <button type="submit" disabled={loading} className="btn btn-primary">
+            {loading ? (
+              <>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                </svg>
+                Cargando...
+              </>
+            ) : (
+              <>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                Buscar
+              </>
+            )}
           </button>
         </form>
 
+        {/* Results */}
         {results.length > 0 && (
-          <div className="bg-card border rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50">
+          <div className="card" style={{ overflow: 'hidden' }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid hsl(var(--border))' }}>
+              <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))' }}>{results.length} contrato{results.length !== 1 ? 's' : ''}</span>
+            </div>
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium">Expediente</th>
-                  <th className="text-left px-4 py-3 font-medium">Cliente</th>
-                  <th className="text-left px-4 py-3 font-medium">Inmueble</th>
-                  <th className="text-left px-4 py-3 font-medium">Inicio</th>
-                  <th className="text-left px-4 py-3 font-medium">Monto</th>
-                  <th className="text-left px-4 py-3 font-medium">Estado</th>
-                  <th className="px-4 py-3"></th>
+                  <th>Expediente</th>
+                  <th>Cliente</th>
+                  <th>Inmueble</th>
+                  <th>Inicio</th>
+                  <th>Monto</th>
+                  <th>Estado</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {results.map(r => (
-                  <tr key={r.IDPRODUCTO} className="border-t hover:bg-muted/30">
-                    <td className="px-4 py-3 font-mono text-xs">{r.CANUMEROEXPEDIENTE}</td>
-                    <td className="px-4 py-3 text-xs">{r.CLIENTE}</td>
-                    <td className="px-4 py-3 text-xs">{r.INNOMBRECALLE} {r.INNUMEROCALLE}</td>
-                    <td className="px-4 py-3 text-xs">{r.PRFCHINICIO ? new Date(r.PRFCHINICIO).toLocaleDateString('es-CL') : '—'}</td>
-                    <td className="px-4 py-3 text-xs">${(r.PRMONTOTOTAL || 0).toLocaleString('es-CL')}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${estadoColors[r.ESTADO] || 'bg-gray-100 text-gray-600'}`}>
-                        {r.ESTADO}
-                      </span>
+                  <tr key={r.id}>
+                    <td style={{ fontFamily: 'monospace', fontSize: '12px', fontWeight: 500 }}>{r.contrato?.numeroExpediente || '—'}</td>
+                    <td style={{ fontWeight: 500 }}>{r.cliente?.nombre}</td>
+                    <td style={{ color: 'hsl(var(--muted-foreground))' }}>{r.inmueble?.nombreCalle} {r.inmueble?.numeroCalle}</td>
+                    <td style={{ color: 'hsl(var(--muted-foreground))' }}>
+                      {r.fchInicio ? new Date(r.fchInicio).toLocaleDateString('es-CL') : '—'}
                     </td>
-                    <td className="px-4 py-3">
-                      <a href={`/contratos/${r.IDPRODUCTO}`} className="text-xs text-primary hover:underline">Ver →</a>
+                    <td style={{ fontWeight: 500 }}>${Number(r.montoTotal || 0).toLocaleString('es-CL')}</td>
+                    <td>
+                      <span className={`badge ${estadoBadge[r.estadoProducto?.nombre] || 'badge-gray'}`}>{r.estadoProducto?.nombre}</span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <a href={`/contratos/${r.id}`} style={{ color: 'hsl(var(--primary))', fontSize: '12px', textDecoration: 'none', fontWeight: 500 }}>
+                        Ver →
+                      </a>
                     </td>
                   </tr>
                 ))}
@@ -101,9 +131,15 @@ export default function ContratosPage() {
         )}
 
         {results.length === 0 && !loading && (
-          <p className="text-sm text-muted-foreground">Seleccione filtros y presione Buscar para ver contratos.</p>
+          <div style={{ textAlign: 'center', padding: '48px 0', color: 'hsl(var(--muted-foreground))' }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 12px', opacity: 0.4 }}>
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+            </svg>
+            <p style={{ fontSize: '14px' }}>Seleccione filtros y presione Buscar</p>
+          </div>
         )}
       </main>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

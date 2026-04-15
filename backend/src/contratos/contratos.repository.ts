@@ -7,6 +7,7 @@ import { Resolucion } from '../common/database/entities/resolucion.entity';
 import { ProdResol } from '../common/database/entities/prod-resol.entity';
 import { AdjuntoProducto } from '../common/database/entities/adjunto-producto.entity';
 import { Fiscalizacion } from '../common/database/entities/fiscalizacion.entity';
+import { Cuota } from '../common/database/entities/cuota.entity';
 import { CreateContratoDto, AddResolucionDto, AddAdjuntoDto, AddFiscalizacionDto } from './dto/contrato.dto';
 
 @Injectable()
@@ -18,10 +19,11 @@ export class ContratosRepository {
     @InjectRepository(ProdResol) private prodResolRepo: Repository<ProdResol>,
     @InjectRepository(AdjuntoProducto) private adjuntoRepo: Repository<AdjuntoProducto>,
     @InjectRepository(Fiscalizacion) private fiscalizacionRepo: Repository<Fiscalizacion>,
+    @InjectRepository(Cuota) private cuotaRepo: Repository<Cuota>,
   ) {}
 
-  findAll(filters: { region?: number; estado?: number; tipo?: number; page?: number; pageSize?: number }) {
-    const { region, estado, tipo, page = 1, pageSize = 20 } = filters;
+  findAll(filters: { region?: number; estado?: number; tipo?: number; inmueble?: number; page?: number; pageSize?: number }) {
+    const { region, estado, tipo, inmueble, page = 1, pageSize = 20 } = filters;
     const qb = this.productoRepo.createQueryBuilder('p')
       .innerJoinAndSelect('p.estadoProducto', 'ep')
       .innerJoinAndSelect('p.tipoProducto', 'tp')
@@ -31,18 +33,36 @@ export class ContratosRepository {
       .skip((page - 1) * pageSize).take(pageSize)
       .orderBy('p.id', 'DESC');
 
-    if (region) qb.andWhere('p.regionId = :region', { region });
-    if (estado) qb.andWhere('p.estadoProductoId = :estado', { estado });
-    if (tipo) qb.andWhere('p.tipoProductoId = :tipo', { tipo });
+    if (region)   qb.andWhere('p.regionId = :region',           { region });
+    if (estado)   qb.andWhere('p.estadoProductoId = :estado',   { estado });
+    if (tipo)     qb.andWhere('p.tipoProductoId = :tipo',       { tipo });
+    if (inmueble) qb.andWhere('p.inmuebleId = :inmueble',       { inmueble });
 
     return qb.getManyAndCount();
   }
-
-  findById(id: number) {
-    return this.productoRepo.findOne({
-      where: { id },
-      relations: ['estadoProducto', 'tipoProducto', 'cliente', 'inmueble', 'inmueble.region'],
-    });
+  async findById(id: number) {
+    const [producto, contrato, cuotas, fiscalizaciones, resoluciones] = await Promise.all([
+      this.productoRepo.findOne({
+        where: { id },
+        relations: ['estadoProducto', 'tipoProducto', 'cliente', 'inmueble', 'inmueble.region', 'inmueble.comuna'],
+      }),
+      this.contratoRepo.findOne({ where: { productoId: id } }),
+      this.cuotaRepo.find({
+        where: { productoId: id },
+        relations: ['estadoCuota'],
+        order: { fchVencimiento: 'ASC' },
+      }),
+      this.fiscalizacionRepo.find({
+        where: { productoId: id },
+        order: { fchFiscalizacion: 'DESC' },
+      }),
+      this.prodResolRepo.find({
+        where: { productoId: id },
+        relations: ['resolucion'],
+        order: { id: 'DESC' },
+      }),
+    ]);
+    return { producto, contrato, cuotas, fiscalizaciones, resoluciones };
   }
 
   async findByExpediente(expediente: string) {

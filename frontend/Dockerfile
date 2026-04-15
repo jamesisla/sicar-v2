@@ -3,7 +3,7 @@ FROM node:20-alpine AS deps
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --prefer-offline
+RUN npm install --prefer-offline
 
 # ── Stage 2: build ───────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder

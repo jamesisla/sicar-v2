@@ -39,7 +39,7 @@ export class ReferenciaService {
   getEstadosCuota() { return this.estadoCuotaRepo.find(); }
   getTiposCobranza() { return this.tipoCobranzaRepo.find(); }
 
-  getIPC() { return this.ipcRepo.find({ order: { agno: 'DESC', mes: 'DESC' } }); }
+  getIPC(_filters?: any) { return this.ipcRepo.find({ order: { agno: 'DESC', mes: 'DESC' } }); }
 
   async upsertIPC(mes: number, agno: number, valor: number, variacion: number) {
     const existing = await this.ipcRepo.findOne({ where: { mes, agno } });
@@ -51,7 +51,7 @@ export class ReferenciaService {
     return { success: true };
   }
 
-  getUF() { return this.ufRepo.find({ order: { fecha: 'DESC' }, take: 30 }); }
+  getUF(_filters?: any) { return this.ufRepo.find({ order: { fecha: 'DESC' }, take: 30 }); }
 
   async upsertUF(fecha: string, valor: number) {
     const fechaDate = new Date(fecha.split('/').reverse().join('-'));
@@ -65,6 +65,12 @@ export class ReferenciaService {
   }
 
   getInteresPenal() { return this.interesRepo.find({ order: { agno: 'DESC', mes: 'DESC' } }); }
+
+  getFeriados() { return []; }
+
+  getLeyPresupuestaria() { return []; }
+
+  getTiposUso() { return []; }
 
   // Property 10: get index for specific date
   async getIndiceParaFecha(fecha: string, tipoBase: number): Promise<number> {

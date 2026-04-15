@@ -21,7 +21,7 @@ export class CobranzaRepository {
 
   async buscarDeuda(filters: any, userRegion: number) {
     const qb = this.productoRepo.createQueryBuilder('p')
-      .innerJoin(ContratoArriendo, 'ca', 'ca.productoId = p.id')
+      .innerJoinAndMapOne('p.contrato', ContratoArriendo, 'ca', 'ca.productoId = p.id')
       .innerJoinAndSelect('p.cliente', 'c')
       .innerJoinAndSelect('p.inmueble', 'i')
       .innerJoinAndSelect('p.estadoProducto', 'ep')

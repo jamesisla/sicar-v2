@@ -11,14 +11,15 @@ export class ClientesService {
     private audit: AuditService,
   ) {}
 
-  findAll(filters: any) {
-    return this.repo.findAll(filters);
+  async findAll(filters: any) {
+    const [rows, total] = await this.repo.findAll(filters);
+    return { rows, total };
   }
 
   async findById(id: number) {
-    const cliente = await this.repo.findById(id);
-    if (!cliente) throw new NotFoundException('El recurso solicitado no existe');
-    return cliente;
+    const detalle = await this.repo.findByIdDetalle(id);
+    if (!detalle.cliente) throw new NotFoundException('El recurso solicitado no existe');
+    return detalle;
   }
 
   async createPersonaNatural(dto: CreatePersonaNaturalDto, userId: number, ip: string) {
@@ -27,7 +28,7 @@ export class ClientesService {
     }
     const result = await this.repo.createPersonaNatural(dto, userId);
     await this.audit.log({
-      idUsuario: userId, entidad: 'CLIENTE', idRegistro: String(result.idCliente),
+      idUsuario: userId, entidad: 'CLIENTE', idRegistro: String(result.id),
       operacion: 'INSERT', valorNuevo: dto, ipCliente: ip, endpoint: '/api/v1/clientes',
     });
     return result;
@@ -42,7 +43,7 @@ export class ClientesService {
     }
     const result = await this.repo.createPersonaJuridica(dto, userId);
     await this.audit.log({
-      idUsuario: userId, entidad: 'CLIENTE', idRegistro: String(result.idCliente),
+      idUsuario: userId, entidad: 'CLIENTE', idRegistro: String(result.id),
       operacion: 'INSERT', valorNuevo: dto, ipCliente: ip, endpoint: '/api/v1/clientes',
     });
     return result;

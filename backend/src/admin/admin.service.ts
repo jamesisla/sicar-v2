@@ -39,4 +39,14 @@ export class AdminService {
   }
 
   getPerfiles() { return this.perfilRepo.find({ order: { id: 'ASC' } }); }
+
+  getOpciones() { return []; }
+
+  getPermisos(_perfilId: number) { return []; }
+
+  getUnidadesSigfe() { return []; }
+
+  getCuentasSigfe() { return []; }
+
+  getSeremi() { return []; }
 }

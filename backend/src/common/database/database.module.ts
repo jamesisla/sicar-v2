@@ -54,7 +54,7 @@ export const ALL_ENTITIES = [
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
+      useFactory: (config: ConfigService): any => ({
         type: config.get<any>('DB_TYPE', 'postgres'),
         host: config.get('DB_HOST', 'localhost'),
         port: config.get<number>('DB_PORT', 5432),

@@ -12,12 +12,15 @@ function parseDate(str: string): Date {
 export class ContratosService {
   constructor(private repo: ContratosRepository, private audit: AuditService) {}
 
-  findAll(filters: any) { return this.repo.findAll(filters); }
+  async findAll(filters: any) {
+    const [rows, total] = await this.repo.findAll(filters);
+    return { rows, total };
+  }
 
   async findById(id: number) {
-    const item = await this.repo.findById(id);
-    if (!item) throw new NotFoundException('El recurso solicitado no existe');
-    return item;
+    const detalle = await this.repo.findById(id);
+    if (!detalle.producto) throw new NotFoundException('El recurso solicitado no existe');
+    return detalle;
   }
 
   async create(dto: CreateContratoDto, userId: number, ip: string) {
@@ -31,18 +34,18 @@ export class ContratosService {
     }
     const result = await this.repo.create(dto, userId);
     await this.audit.log({
-      idUsuario: userId, entidad: 'PRODUCTO', idRegistro: String(result.idProducto),
+      idUsuario: userId, entidad: 'PRODUCTO', idRegistro: String(result.id),
       operacion: 'INSERT', valorNuevo: dto, ipCliente: ip,
     });
     return result;
   }
 
   async cambiarEstado(id: number, dto: CambiarEstadoDto, userId: number, ip: string) {
-    const contrato = await this.findById(id);
-    await this.repo.cambiarEstado(id, dto.estadoProductoId, dto.monto, userId);
+    const { producto } = await this.findById(id);
+    await this.repo.cambiarEstado(id, dto.estadoProductoId, userId);
     await this.audit.log({
       idUsuario: userId, entidad: 'PRODUCTO', idRegistro: String(id),
-      operacion: 'UPDATE', valorAnterior: { estado: contrato.ESTADOPRODUCTO_IDESTADOP },
+      operacion: 'UPDATE', valorAnterior: { estado: producto?.estadoProductoId },
       valorNuevo: { estado: dto.estadoProductoId }, ipCliente: ip,
     });
   }

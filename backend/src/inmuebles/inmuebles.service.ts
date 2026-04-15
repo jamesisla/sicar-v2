@@ -7,7 +7,10 @@ import { CreateInmuebleDto } from './dto/inmueble.dto';
 export class InmueblesService {
   constructor(private repo: InmueblesRepository, private audit: AuditService) {}
 
-  findAll(filters: any) { return this.repo.findAll(filters); }
+  async findAll(filters: any) {
+    const [rows, total] = await this.repo.findAll(filters);
+    return { rows, total };
+  }
 
   async findById(id: number) {
     const item = await this.repo.findById(id);
