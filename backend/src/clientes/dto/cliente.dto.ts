@@ -28,6 +28,22 @@ export class CreatePersonaJuridicaDto {
   @ApiPropertyOptional() @IsOptional() @IsString() repLegalApellidoMaterno?: string;
 }
 
+export class UpdateClienteDto {
+  @ApiPropertyOptional() @IsOptional() @IsString() nombre?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() fonoContacto?: string;
+  @ApiPropertyOptional() @IsOptional() @IsEmail() mailContacto?: string;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() ingresoMes?: number;
+  // Persona natural
+  @ApiPropertyOptional() @IsOptional() @IsString() profesion?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() sexo?: string;
+  // Empresa
+  @ApiPropertyOptional() @IsOptional() @IsString() giro?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() repLegalNombre?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() repLegalApellidoPaterno?: string;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() repLegalRut?: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() repLegalDv?: string;
+}
+
 export class AddDomicilioDto {
   @ApiProperty() @IsNumber() comunaId: number;
   @ApiProperty() @IsString() @IsNotEmpty() calle: string;

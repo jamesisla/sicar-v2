@@ -8,7 +8,7 @@ import { Domicilio } from '../common/database/entities/domicilio.entity';
 import { Contacto } from '../common/database/entities/contacto.entity';
 import { Producto } from '../common/database/entities/producto.entity';
 import { ContratoArriendo } from '../common/database/entities/contrato-arriendo.entity';
-import { CreatePersonaNaturalDto, CreatePersonaJuridicaDto, AddDomicilioDto, AddContactoDto } from './dto/cliente.dto';
+import { CreatePersonaNaturalDto, CreatePersonaJuridicaDto, AddDomicilioDto, AddContactoDto, UpdateClienteDto } from './dto/cliente.dto';
 
 @Injectable()
 export class ClientesRepository {
@@ -135,5 +135,48 @@ export class ClientesRepository {
       clienteId, nombre: dto.nombre, cargoRelacion: dto.cargoRelacion,
       email: dto.email, numeroFijo: dto.numeroFijo, numeroMovil: dto.numeroMovil,
     });
+  }
+
+  async update(id: number, dto: UpdateClienteDto, userId: number) {
+    // Update cliente base
+    const clienteUpdate: any = { usuarioActualiza: userId };
+    if (dto.fonoContacto !== undefined) clienteUpdate.fonoContacto = dto.fonoContacto;
+    if (dto.mailContacto !== undefined) clienteUpdate.mailContacto = dto.mailContacto;
+    if (dto.ingresoMes   !== undefined) clienteUpdate.ingresoMes   = dto.ingresoMes;
+    if (dto.nombre       !== undefined) clienteUpdate.nombre       = dto.nombre;
+    if (Object.keys(clienteUpdate).length > 1) {
+      await this.clienteRepo.update(id, clienteUpdate);
+    }
+    // Update persona
+    if (dto.profesion !== undefined || dto.sexo !== undefined) {
+      const personaUpdate: any = {};
+      if (dto.profesion !== undefined) personaUpdate.profesion = dto.profesion;
+      if (dto.sexo      !== undefined) personaUpdate.sexo      = dto.sexo;
+      await this.personaRepo.update({ clienteId: id }, personaUpdate);
+    }
+    // Update empresa
+    if (dto.giro !== undefined || dto.repLegalNombre !== undefined || dto.repLegalApellidoPaterno !== undefined || dto.repLegalRut !== undefined) {
+      const empresaUpdate: any = {};
+      if (dto.giro                    !== undefined) empresaUpdate.giro                    = dto.giro;
+      if (dto.repLegalNombre          !== undefined) empresaUpdate.nombreRepLegal           = dto.repLegalNombre;
+      if (dto.repLegalApellidoPaterno !== undefined) empresaUpdate.apellidoPaternoRep       = dto.repLegalApellidoPaterno;
+      if (dto.repLegalRut             !== undefined) empresaUpdate.rutRepLegal              = dto.repLegalRut;
+      if (dto.repLegalDv              !== undefined) empresaUpdate.dvRepLegal               = dto.repLegalDv;
+      await this.empresaRepo.update({ clienteId: id }, empresaUpdate);
+    }
+    return { success: true };
+  }
+
+  async desactivar(id: number, userId: number) {
+    await this.clienteRepo.update(id, { usuarioActualiza: userId });
+    return { success: true };
+  }
+
+  async deleteDomicilio(clienteId: number, domicilioId: number) {
+    await this.domicilioRepo.delete({ id: domicilioId, clienteId });
+  }
+
+  async deleteContacto(clienteId: number, contactoId: number) {
+    await this.contactoRepo.delete({ id: contactoId, clienteId });
   }
 }

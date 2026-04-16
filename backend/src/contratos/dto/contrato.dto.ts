@@ -47,3 +47,10 @@ export class CambiarEstadoDto {
   @ApiProperty() @IsNumber() estadoProductoId: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() monto?: number;
 }
+
+export class PagoManualDto {
+  @ApiProperty() @IsNumber() monto: number;
+  @ApiProperty() @IsString() @IsNotEmpty() fechaPago: string; // DD/MM/YYYY
+  @ApiPropertyOptional() @IsOptional() @IsString() glosa?: string;
+  @ApiProperty() @IsNumber() tipoMovimientoId: number;
+}

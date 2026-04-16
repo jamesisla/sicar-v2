@@ -8,7 +8,8 @@ import { ProdResol } from '../common/database/entities/prod-resol.entity';
 import { AdjuntoProducto } from '../common/database/entities/adjunto-producto.entity';
 import { Fiscalizacion } from '../common/database/entities/fiscalizacion.entity';
 import { Cuota } from '../common/database/entities/cuota.entity';
-import { CreateContratoDto, AddResolucionDto, AddAdjuntoDto, AddFiscalizacionDto } from './dto/contrato.dto';
+import { CuentaCorriente } from '../common/database/entities/cuenta-corriente.entity';
+import { CreateContratoDto, AddResolucionDto, AddAdjuntoDto, AddFiscalizacionDto, PagoManualDto } from './dto/contrato.dto';
 
 @Injectable()
 export class ContratosRepository {
@@ -20,6 +21,7 @@ export class ContratosRepository {
     @InjectRepository(AdjuntoProducto) private adjuntoRepo: Repository<AdjuntoProducto>,
     @InjectRepository(Fiscalizacion) private fiscalizacionRepo: Repository<Fiscalizacion>,
     @InjectRepository(Cuota) private cuotaRepo: Repository<Cuota>,
+    @InjectRepository(CuentaCorriente) private ccRepo: Repository<CuentaCorriente>,
   ) {}
 
   findAll(filters: { region?: number; estado?: number; tipo?: number; inmueble?: number; page?: number; pageSize?: number }) {
@@ -135,6 +137,20 @@ export class ContratosRepository {
       apellidoPaterno: dto.apellidoPaterno,
       observacion: dto.observacion,
       usuarioActualiza: userId,
+    });
+  }
+
+  async registrarPagoManual(productoId: number, dto: PagoManualDto, userId: number) {
+    const [d, m, y] = dto.fechaPago.split('/').map(Number);
+    return this.ccRepo.save({
+      productoId,
+      tipoMovimientoId: dto.tipoMovimientoId,
+      cargoAbono: 2, // abono
+      fchMovimiento: new Date(y, m - 1, d),
+      fchContable: new Date(y, m - 1, d),
+      montoMov: dto.monto,
+      centralizadoSigfe: 0,
+      usuarioCreacion: userId,
     });
   }
 }

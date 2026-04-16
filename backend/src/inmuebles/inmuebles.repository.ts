@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Inmueble } from '../common/database/entities/inmueble.entity';
-import { CreateInmuebleDto } from './dto/inmueble.dto';
+import { CreateInmuebleDto, UpdateInmuebleDto } from './dto/inmueble.dto';
 
 @Injectable()
 export class InmueblesRepository {
@@ -43,5 +43,10 @@ export class InmueblesRepository {
       agnoInscripcion: dto.agnoInscripcion, idCatastral: dto.idCatastral,
       usuarioActualiza: userId,
     });
+  }
+
+  async update(id: number, dto: UpdateInmuebleDto, userId: number) {
+    await this.repo.update(id, { ...dto, usuarioActualiza: userId });
+    return this.findById(id);
   }
 }

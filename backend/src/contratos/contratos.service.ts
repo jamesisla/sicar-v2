@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { ContratosRepository } from './contratos.repository';
 import { AuditService } from '../common/audit/audit.service';
-import { CreateContratoDto, AddResolucionDto, AddAdjuntoDto, AddFiscalizacionDto, CambiarEstadoDto } from './dto/contrato.dto';
+import { CreateContratoDto, AddResolucionDto, AddAdjuntoDto, AddFiscalizacionDto, CambiarEstadoDto, PagoManualDto } from './dto/contrato.dto';
 
 function parseDate(str: string): Date {
   const [d, m, y] = str.split('/').map(Number);
@@ -60,5 +60,15 @@ export class ContratosService {
 
   addFiscalizacion(productoId: number, dto: AddFiscalizacionDto, userId: number) {
     return this.repo.addFiscalizacion(productoId, dto, userId);
+  }
+
+  async registrarPagoManual(productoId: number, dto: PagoManualDto, userId: number, ip: string) {
+    if (dto.monto <= 0) throw new UnprocessableEntityException('El monto debe ser positivo');
+    const result = await this.repo.registrarPagoManual(productoId, dto, userId);
+    await this.audit.log({
+      idUsuario: userId, entidad: 'CUENTA_CORRIENTE', idRegistro: String(result.id),
+      operacion: 'INSERT', valorNuevo: dto, ipCliente: ip,
+    });
+    return result;
   }
 }
