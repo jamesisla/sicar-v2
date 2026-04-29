@@ -168,3 +168,6 @@ SELECT setval('usuario_id_seq', (SELECT MAX(id) FROM usuario));
 SELECT setval('cliente_id_seq', (SELECT MAX(id) FROM cliente));
 SELECT setval('inmueble_id_seq', (SELECT MAX(id) FROM inmueble));
 SELECT setval('producto_id_seq', (SELECT MAX(id) FROM producto));
+
+-- Asegurar contraseña del usuario sicar para conexiones remotas (scram-sha-256)
+ALTER USER sicar WITH PASSWORD 'sicar123';
