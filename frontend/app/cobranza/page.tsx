@@ -5,14 +5,11 @@ import { validarRut } from '../../lib/validators/rut';
 import { api } from '../../lib/api';
 
 interface DeudaResult {
-  IDPRODUCTO: number;
-  CANUMEROEXPEDIENTE: string;
-  CLNOMBRE: string;
-  CLRUT: number;
-  CLDV: string;
-  INNOMBRECALLE: string;
-  PRREGION: number;
-  ESTADO: string;
+  id: number;
+  contrato?: { numeroExpediente: string };
+  cliente?: { nombre: string; rut: number; dv: string };
+  inmueble?: { nombreCalle: string };
+  estadoProducto?: { nombre: string };
 }
 
 export default function CobranzaPage() {
