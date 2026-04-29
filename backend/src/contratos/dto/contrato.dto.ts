@@ -1,23 +1,24 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsDateString } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsNumber } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateContratoDto {
-  @ApiProperty() @IsNumber() productoId?: number;
-  @ApiProperty() @IsNumber() clienteId: number;
-  @ApiProperty() @IsNumber() inmuebleId: number;
-  @ApiProperty() @IsNumber() tipoProductoId: number;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() productoId?: number;
+  @ApiProperty() @Type(() => Number) @IsNumber() clienteId: number;
+  @ApiProperty() @Type(() => Number) @IsNumber() inmuebleId: number;
+  @ApiProperty() @Type(() => Number) @IsNumber() tipoProductoId: number;
   @ApiProperty() @IsString() @IsNotEmpty() expediente: string;
-  @ApiProperty() @IsNumber() periodoCuotaId: number;
-  @ApiProperty() @IsNumber() tipoUsoId: number;
+  @ApiProperty() @Type(() => Number) @IsNumber() periodoCuotaId: number;
+  @ApiProperty() @Type(() => Number) @IsNumber() tipoUsoId: number;
   @ApiProperty() @IsString() @IsNotEmpty() fechaPrimeraCuota: string; // DD/MM/YYYY
   @ApiProperty() @IsString() @IsNotEmpty() fechaFirma: string; // DD/MM/YYYY
-  @ApiPropertyOptional() @IsOptional() @IsNumber() interesPerial?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber() tipoBaseCalculo?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber() canonArriendo?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber() interes?: number;
-  @ApiProperty() @IsNumber() region: number;
-  @ApiProperty() @IsNumber() montoTotal: number;
-  @ApiProperty() @IsNumber() numeroCuotas: number;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() interesPerial?: number;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() tipoBaseCalculo?: number;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() canonArriendo?: number;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() interes?: number;
+  @ApiProperty() @Type(() => Number) @IsNumber() region: number;
+  @ApiProperty() @Type(() => Number) @IsNumber() montoTotal: number;
+  @ApiProperty() @Type(() => Number) @IsNumber() numeroCuotas: number;
 }
 
 export class AddResolucionDto {

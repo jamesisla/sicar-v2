@@ -39,7 +39,13 @@ export default function ClientesPage() {
     }
     try {
       const endpoint = tipo === 'natural' ? '/clientes/persona-natural' : '/clientes/persona-juridica';
-      await api.post(endpoint, form);
+      const payload = {
+        ...form,
+        rut:          form.rut          ? Number(form.rut)          : undefined,
+        repLegalRut:  form.repLegalRut  ? Number(form.repLegalRut)  : undefined,
+        rentaMensual: form.rentaMensual ? Number(form.rentaMensual) : undefined,
+      };
+      await api.post(endpoint, payload);
       setSuccess('Cliente creado exitosamente');
       setShowForm(false);
       setForm({});

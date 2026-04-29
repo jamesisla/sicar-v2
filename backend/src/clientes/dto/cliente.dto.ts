@@ -1,8 +1,9 @@
 import { IsString, IsNotEmpty, IsOptional, IsNumber, IsEmail } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreatePersonaNaturalDto {
-  @ApiProperty() @IsNumber() rut: number;
+  @ApiProperty() @Type(() => Number) @IsNumber() rut: number;
   @ApiProperty() @IsString() @IsNotEmpty() dv: string;
   @ApiProperty() @IsString() @IsNotEmpty() nombre: string;
   @ApiProperty() @IsString() @IsNotEmpty() apellidoPaterno: string;
@@ -11,17 +12,17 @@ export class CreatePersonaNaturalDto {
   @ApiPropertyOptional() @IsOptional() @IsEmail() email?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() telefono?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() sexo?: string;
-  @ApiPropertyOptional() @IsOptional() @IsNumber() nacionalidad?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber() estadoCivil?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber() rentaMensual?: number;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() nacionalidad?: number;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() estadoCivil?: number;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() rentaMensual?: number;
 }
 
 export class CreatePersonaJuridicaDto {
-  @ApiProperty() @IsNumber() rut: number;
+  @ApiProperty() @Type(() => Number) @IsNumber() rut: number;
   @ApiProperty() @IsString() @IsNotEmpty() dv: string;
   @ApiProperty() @IsString() @IsNotEmpty() razonSocial: string;
   @ApiPropertyOptional() @IsOptional() @IsString() giro?: string;
-  @ApiProperty() @IsNumber() repLegalRut: number;
+  @ApiProperty() @Type(() => Number) @IsNumber() repLegalRut: number;
   @ApiProperty() @IsString() @IsNotEmpty() repLegalDv: string;
   @ApiProperty() @IsString() @IsNotEmpty() repLegalNombre: string;
   @ApiProperty() @IsString() @IsNotEmpty() repLegalApellidoPaterno: string;
