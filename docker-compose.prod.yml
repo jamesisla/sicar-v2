@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sicar_v2
+      POSTGRES_USER: sicar
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-sicar_prod_2024}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./backend/db/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sicar -d sicar_v2"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sicar-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sicar-net
+    # No expone puertos al host — solo accesible via nginx
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost/api}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - sicar-net
+    # No expone puertos al host — solo accesible via nginx
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - backend
+    restart: unless-stopped
+    networks:
+      - sicar-net
+
+volumes:
+  postgres_data:
+
+networks:
+  sicar-net:
+    driver: bridge

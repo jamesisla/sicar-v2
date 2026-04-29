@@ -8,8 +8,11 @@ function getToken(): string | null {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
+  // En producción con Nginx, NEXT_PUBLIC_API_URL = '' (mismo origen)
+  // En desarrollo, NEXT_PUBLIC_API_URL = 'http://localhost:3001'
+  const base = API_URL === 'http://localhost/api' ? '' : API_URL;
 
-  const res = await fetch(`${API_URL}/api/v1${path}`, {
+  const res = await fetch(`${base}/api/v1${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
