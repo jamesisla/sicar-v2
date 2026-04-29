@@ -1,4 +1,8 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+// En desarrollo: NEXT_PUBLIC_API_URL = 'http://localhost:3001'  → fetch a http://localhost:3001/api/v1/...
+// En producción con Nginx: NEXT_PUBLIC_API_URL no se define (o vacío) → fetch a /api/v1/... (mismo origen, Nginx lo proxea)
+const API_BASE = process.env.NEXT_PUBLIC_API_URL
+  ? `${process.env.NEXT_PUBLIC_API_URL}/api/v1`
+  : '/api/v1';
 
 function getToken(): string | null {
   if (typeof document === 'undefined') return null;
@@ -8,11 +12,8 @@ function getToken(): string | null {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
-  // En producción con Nginx, NEXT_PUBLIC_API_URL = '' (mismo origen)
-  // En desarrollo, NEXT_PUBLIC_API_URL = 'http://localhost:3001'
-  const base = API_URL === 'http://localhost/api' ? '' : API_URL;
 
-  const res = await fetch(`${base}/api/v1${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',

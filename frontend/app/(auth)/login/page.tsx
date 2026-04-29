@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { api } from '../../../lib/api';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,25 +16,14 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/v1/auth/login`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ login, password }),
-          credentials: 'include',
-        }
+      const data = await api.post<{ accessToken: string; expiresIn: number }>(
+        '/auth/login',
+        { login, password }
       );
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.message || 'Credenciales incorrectas');
-        return;
-      }
-      const data = await res.json();
       document.cookie = `access_token=${data.accessToken}; path=/; max-age=${data.expiresIn}`;
       router.push('/dashboard');
-    } catch {
-      setError('Error de conexión. Intente nuevamente.');
+    } catch (err: any) {
+      setError(err.message || 'Error de conexión. Intente nuevamente.');
     } finally {
       setLoading(false);
     }
