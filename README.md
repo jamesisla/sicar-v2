@@ -8,61 +8,332 @@ Sistema de Administración de Cartera de Arriendos — Ministerio de Bienes Naci
 |------|-----------|
 | Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS |
 | Backend | NestJS, TypeScript, TypeORM |
-| Base de datos | PostgreSQL (desarrollo) / Oracle (producción) |
-| ORM | TypeORM — soporta PostgreSQL, Oracle, MySQL, SQLite |
+| Base de datos | PostgreSQL (desarrollo/producción) / Oracle (producción MBN) |
+| Proxy | Nginx |
 | Contenedores | Docker + Docker Compose |
-| CI/CD | GitHub Actions |
-
-> El backend usa TypeORM como capa de abstracción. Cambiar de PostgreSQL a Oracle solo requiere ajustar las variables de entorno `DB_TYPE`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`.
 
 ---
 
-## Inicio rápido
+## Credenciales por defecto
+
+| Campo | Valor |
+|-------|-------|
+| Usuario | `admin` |
+| Contraseña | `admin123` |
+| DB usuario | `sicar` |
+| DB contraseña | `sicar123` |
+| DB nombre | `sicar_v2` |
+
+---
+
+## Desarrollo local
 
 ### Requisitos
 
-- Node.js 20+
-- Docker y Docker Compose
-- Acceso a la base de datos Oracle SICAR
+- Docker Desktop (o Docker Engine + Docker Compose)
+- Git
 
-### 1. Clonar y configurar
+### 1. Clonar el repositorio
 
 ```bash
-git clone https://github.com/your-org/sicar-v2.git
+git clone https://github.com/jamesisla/sicar-v2.git
 cd sicar-v2
+git checkout feature/frontend-modulos-completos
+```
+
+### 2. Configurar variables de entorno
+
+```bash
 cp backend/.env.example backend/.env
-# Editar backend/.env con las credenciales Oracle reales
 ```
 
-### 2. Desarrollo local (con hot reload)
+El archivo `.env` ya viene configurado para desarrollo local con PostgreSQL. No necesitas cambiar nada.
+
+### 3. Levantar la aplicación
 
 ```bash
-# Levanta PostgreSQL + backend + frontend con hot reload
-docker compose -f docker-compose.dev.yml up
-
-# La BD se inicializa automáticamente con schema.sql + seed.sql
-# Backend: http://localhost:3001
-# Frontend: http://localhost:3000
-# API Docs: http://localhost:3001/api/docs
+docker compose -f docker-compose.dev.yml up --build
 ```
 
-O sin Docker:
+La primera vez tarda ~5-10 minutos mientras descarga imágenes y compila.
+
+### 4. Acceder
+
+| Servicio | URL |
+|----------|-----|
+| Frontend | http://localhost:3000 |
+| Backend API | http://localhost:3001 |
+| Swagger Docs | http://localhost:3001/api/docs |
+
+### Comandos útiles en local
 
 ```bash
-# Primero levanta solo PostgreSQL
-docker compose -f docker-compose.dev.yml up postgres
+# Ver logs en tiempo real
+docker compose -f docker-compose.dev.yml logs -f
 
-# Backend
-cd backend && npm install && npm run start:dev
+# Ver logs de un servicio específico
+docker compose -f docker-compose.dev.yml logs -f backend
 
-# Frontend (otra terminal)
-cd frontend && npm install && npm run dev
+# Detener todo
+docker compose -f docker-compose.dev.yml down
+
+# Detener y borrar la base de datos (reset completo)
+docker compose -f docker-compose.dev.yml down -v
+
+# Reiniciar un servicio
+docker compose -f docker-compose.dev.yml restart backend
 ```
 
-### 3. Producción local
+---
+
+## Producción — Oracle Cloud (OCI)
+
+### Requisitos en el servidor
+
+- Oracle Linux 8 (o compatible RHEL 8)
+- Docker Engine + Docker Compose Plugin
+- Git
+- Puerto 80 abierto en el Security List de OCI y en el firewall del SO
+
+### 1. Preparar el servidor (primera vez)
+
+Conectarse por SSH:
 
 ```bash
-docker compose up --build
+ssh -i tu-clave.pem opc@<IP-PUBLICA>
+```
+
+Instalar Docker:
+
+```bash
+sudo dnf update -y
+sudo dnf install -y dnf-utils git
+sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker opc
+newgrp docker
+```
+
+Abrir puerto 80 en el firewall del SO:
+
+```bash
+sudo firewall-cmd --permanent --add-port=80/tcp
+sudo firewall-cmd --reload
+sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT
+```
+
+> También debes abrir el puerto 80 en el **Security List** de OCI:
+> Networking → VCN → Security Lists → Add Ingress Rule → Puerto 80 TCP
+
+### 2. Clonar el repositorio
+
+```bash
+cd /opt
+sudo git clone https://github.com/jamesisla/sicar-v2.git
+sudo chown -R opc:opc sicar-v2
+cd sicar-v2
+git checkout feature/frontend-modulos-completos
+```
+
+### 3. Configurar variables de entorno
+
+```bash
+cp backend/.env.example backend/.env
+nano backend/.env
+```
+
+Editar los valores obligatorios (sin comentarios en la misma línea):
+
+```bash
+DB_TYPE=postgres
+DB_HOST=postgres
+DB_PORT=5432
+DB_USER=sicar
+DB_PASSWORD=sicar123
+DB_NAME=sicar_v2
+DB_SYNC=false
+DB_LOGGING=false
+DB_SSL=false
+
+JWT_SECRET=<ejecutar: openssl rand -hex 64>
+JWT_REFRESH_SECRET=<ejecutar: openssl rand -hex 64>
+
+PORT=3001
+CORS_ORIGINS=http://<IP-PUBLICA-OCI>
+NODE_ENV=production
+```
+
+Generar los JWT secrets:
+
+```bash
+openssl rand -hex 64   # copiar resultado en JWT_SECRET
+openssl rand -hex 64   # copiar resultado en JWT_REFRESH_SECRET
+```
+
+### 4. Configurar la IP en docker-compose.prod.yml
+
+```bash
+nano docker-compose.prod.yml
+```
+
+En el bloque `frontend.build.args`, reemplazar la IP:
+
+```yaml
+args:
+  NEXT_PUBLIC_API_URL: "http://<IP-PUBLICA-OCI>"
+```
+
+También verificar que `POSTGRES_PASSWORD` coincida con `DB_PASSWORD` del `.env`:
+
+```yaml
+POSTGRES_PASSWORD: sicar123
+```
+
+### 5. Levantar la aplicación
+
+```bash
+docker compose -f docker-compose.prod.yml up --build -d
+```
+
+La primera vez tarda ~10-15 minutos.
+
+### 6. Verificar que todo esté corriendo
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+```
+
+Deben aparecer 4 contenedores en estado `Up`: postgres, backend, frontend, nginx.
+
+### 7. Acceder
+
+```
+http://<IP-PUBLICA-OCI>
+```
+
+---
+
+## Actualizar la aplicación en producción
+
+```bash
+cd /opt/sicar-v2
+
+# Guardar cambios locales (como el .env y docker-compose.prod.yml)
+git stash
+
+# Bajar los cambios del repositorio
+git pull
+
+# Restaurar cambios locales
+git stash pop
+
+# Reconstruir y reiniciar
+docker compose -f docker-compose.prod.yml down
+docker compose -f docker-compose.prod.yml build --no-cache
+docker compose -f docker-compose.prod.yml up -d
+```
+
+---
+
+## Comandos útiles en producción
+
+```bash
+# Ver estado de los contenedores
+docker compose -f docker-compose.prod.yml ps
+
+# Ver logs en tiempo real
+docker compose -f docker-compose.prod.yml logs -f
+
+# Ver logs de un servicio
+docker compose -f docker-compose.prod.yml logs -f backend
+docker compose -f docker-compose.prod.yml logs -f frontend
+docker compose -f docker-compose.prod.yml logs -f nginx
+
+# Reiniciar un servicio sin rebuild
+docker compose -f docker-compose.prod.yml restart backend
+
+# Detener todo (sin borrar datos)
+docker compose -f docker-compose.prod.yml down
+
+# Detener y borrar la base de datos (reset completo — CUIDADO)
+docker compose -f docker-compose.prod.yml down -v
+```
+
+---
+
+## Solución de problemas comunes
+
+### El backend no arranca — "Cannot find module /app/dist/src/main"
+
+El build no compiló correctamente. Forzar rebuild:
+
+```bash
+docker rmi sicar-v2-backend -f
+docker compose -f docker-compose.prod.yml build --no-cache backend
+docker compose -f docker-compose.prod.yml up -d
+```
+
+### Error de autenticación en PostgreSQL — "password authentication failed"
+
+El usuario `sicar` no tiene la contraseña correcta. Resetearla:
+
+```bash
+docker exec sicar-v2-postgres-1 psql -U sicar -d sicar_v2 -c "ALTER USER sicar WITH PASSWORD 'sicar123';"
+docker compose -f docker-compose.prod.yml restart backend
+```
+
+### La página no carga desde el navegador pero `curl localhost` funciona
+
+El firewall del SO está bloqueando el puerto 80:
+
+```bash
+sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT
+sudo firewall-cmd --permanent --add-port=80/tcp
+sudo firewall-cmd --reload
+```
+
+### El login da "Error de conexión"
+
+El frontend está apuntando a la URL incorrecta. Verificar que el `docker-compose.prod.yml` tenga la IP correcta en `NEXT_PUBLIC_API_URL` y hacer rebuild del frontend:
+
+```bash
+docker rmi sicar-v2-frontend -f
+docker compose -f docker-compose.prod.yml build --no-cache frontend
+docker compose -f docker-compose.prod.yml up -d
+```
+
+### git pull falla por cambios locales
+
+```bash
+git stash
+git pull
+git stash pop
+```
+
+---
+
+## Estructura del proyecto
+
+```
+sicar-v2/
+├── backend/              # NestJS API
+│   ├── db/
+│   │   ├── schema.sql    # Estructura de la base de datos
+│   │   └── seed.sql      # Datos iniciales
+│   ├── src/              # Código fuente
+│   ├── Dockerfile
+│   └── .env.example      # Plantilla de variables de entorno
+├── frontend/             # Next.js App
+│   ├── app/              # Páginas (App Router)
+│   ├── components/       # Componentes reutilizables
+│   ├── lib/              # Utilidades (api.ts, validators)
+│   └── Dockerfile
+├── nginx/
+│   └── nginx.conf        # Configuración del proxy inverso
+├── docker-compose.dev.yml    # Desarrollo local
+└── docker-compose.prod.yml   # Producción
 ```
 
 ---
@@ -70,164 +341,22 @@ docker compose up --build
 ## Flujo de trabajo Git
 
 ```
-main          ← producción (protegida, solo merge via PR)
-  └── develop ← staging (protegida, solo merge via PR)
+main          ← producción (protegida)
+  └── develop ← staging (protegida)
         └── feature/nombre-feature
         └── fix/nombre-fix
 ```
 
-### Crear una rama de trabajo
-
 ```bash
+# Crear rama de trabajo
 git checkout develop
 git pull origin develop
 git checkout -b feature/mi-nueva-funcionalidad
+
+# Subir cambios
+git add .
+git commit -m "feat: descripción del cambio"
+git push origin feature/mi-nueva-funcionalidad
 ```
 
-### Abrir un Pull Request
-
-1. Push de la rama: `git push origin feature/mi-nueva-funcionalidad`
-2. Abrir PR hacia `develop` en GitHub
-3. El CI corre automáticamente (tests + build)
-4. Merge solo si CI pasa ✅
-
-### Publicar a producción
-
-```bash
-# Merge develop → main via PR
-# Luego crear un tag de versión:
-git tag v1.0.0
-git push origin v1.0.0
-# El CD construye las imágenes Docker y despliega automáticamente
-```
-
----
-
-## CI/CD (GitHub Actions)
-
-### Pipeline CI — `.github/workflows/ci.yml`
-
-Se ejecuta en cada push a `main`/`develop` y en cada PR.
-
-| Job | Qué hace |
-|-----|---------|
-| `backend` | `tsc --noEmit` → `npm test` → `npm run build` |
-| `frontend` | `tsc --noEmit` → `npm run build` |
-
-### Pipeline CD — `.github/workflows/cd.yml`
-
-Se ejecuta solo en push a `main` o al crear un tag `v*.*.*`.
-
-| Job | Cuándo | Qué hace |
-|-----|--------|---------|
-| `docker` | Siempre | Build + push imágenes a `ghcr.io` |
-| `deploy-staging` | Push a `main` | SSH deploy al servidor de staging |
-| `deploy-production` | Tag `v*.*.*` | SSH deploy al servidor de producción |
-
-### Secrets requeridos en GitHub
-
-Ve a **Settings → Secrets and variables → Actions** y agrega:
-
-| Secret | Descripción |
-|--------|-------------|
-| `STAGING_HOST` | IP o hostname del servidor de staging |
-| `STAGING_USER` | Usuario SSH del servidor de staging |
-| `STAGING_SSH_KEY` | Clave SSH privada para staging |
-| `PROD_HOST` | IP o hostname del servidor de producción |
-| `PROD_USER` | Usuario SSH del servidor de producción |
-| `PROD_SSH_KEY` | Clave SSH privada para producción |
-
-> `GITHUB_TOKEN` es automático — no necesitas configurarlo.
-
-### Environments en GitHub
-
-Ve a **Settings → Environments** y crea:
-- `staging` — sin restricciones adicionales
-- `production` — con "Required reviewers" para aprobación manual
-
----
-
-## Cambiar de base de datos
-
-El backend usa TypeORM. Para conectar a Oracle en producción, solo cambia el `.env`:
-
-```bash
-DB_TYPE=oracle
-DB_HOST=oracle-host
-DB_PORT=1521
-DB_NAME=SICAR
-DB_USER=mbnowner
-DB_PASSWORD=tu-password
-```
-
-No se requiere cambiar código. TypeORM traduce las queries automáticamente.
-
----
-
-## Base de datos PostgreSQL (desarrollo)
-
-```bash
-# Backend — todos los tests (unitarios + PBT)
-cd backend && npm test
-
-# Con cobertura
-cd backend && npm run test:cov
-```
-
----
-
-## API Docs
-
-Con el backend corriendo, la documentación OpenAPI está disponible en:
-
-```
-http://localhost:3001/api/docs
-```
-
----
-
-## Variables de entorno
-
-Ver `backend/.env.example` para la lista completa. Las variables críticas son:
-
-```bash
-ORACLE_USER=mbnowner
-ORACLE_PASSWORD=...
-ORACLE_CONNECTION_STRING=host:1521/SICAR
-JWT_SECRET=...
-JWT_REFRESH_SECRET=...
-SIGFE_CODIGO_INSTITUCION=...
-SIGFE_CORREO_NOTIFICACION=...
-```
-
-**Nunca commitear `.env` con valores reales.**
-
----
-
-## Cambiar de base de datos
-
-El backend usa TypeORM. Para conectar a Oracle en producción, solo cambia el `.env`:
-
-```bash
-DB_TYPE=oracle
-DB_HOST=oracle-host
-DB_PORT=1521
-DB_NAME=SICAR
-DB_USER=mbnowner
-DB_PASSWORD=tu-password
-```
-
-No se requiere cambiar código. TypeORM traduce las queries automáticamente.
-
----
-
-## Base de datos PostgreSQL (desarrollo)
-
-El schema se crea automáticamente al levantar Docker. Para aplicarlo manualmente:
-
-```bash
-psql -U sicar -d sicar_v2 -f backend/db/schema.sql
-psql -U sicar -d sicar_v2 -f backend/db/seed.sql
-```
-
-Usuario de prueba: `admin` / `admin123`
+Abrir Pull Request hacia `develop` en GitHub.
